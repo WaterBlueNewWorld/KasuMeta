@@ -1,0 +1,13 @@
+{
+  "Name": "KasuMeta",
+  "Version": "0.0.1.0",
+  "ApiVersion": 1,
+  "EnabledLocales": [
+    "en-US",
+    "es-ES",
+    "es-MX",
+    "ja-JP",
+    "zh-CN"
+  ],
+  "FallbackToBaseLanguage": true
+}

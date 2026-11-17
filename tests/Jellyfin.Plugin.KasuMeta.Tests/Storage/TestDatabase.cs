@@ -44,15 +44,16 @@ internal sealed class TestDatabase : IDisposable
 
     public void Dispose()
     {
+        // Clears this file's pool only. ClearAllPools here made a parallel test fail now and then
+        // ("Cannot access a disposed object: SQLitePCL.sqlite3") by closing its connection mid-use.
         Database.Dispose();
-        SqliteConnection.ClearAllPools();
         try
         {
             Directory.Delete(_folder, recursive: true);
         }
         catch (IOException)
         {
-            // A pooled handle in a parallel test; the OS temp cleanup gets it.
+            // Still held (e.g. a reader the OS hasn't released yet); the temp cleanup gets it.
         }
     }
 }

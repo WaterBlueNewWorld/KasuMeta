@@ -18,3 +18,7 @@ dotnet_style_qualification_for_field = false:suggestion
 [tests/**.cs]
 # Test names read as sentences: Info_reports_version_and_configured_locales.
 dotnet_diagnostic.CA1707.severity = none
+
+[*.cs]
+# "FetchQueue" is a queue; the suffix rule targets collection types named after their base.
+dotnet_diagnostic.CA1711.severity = none

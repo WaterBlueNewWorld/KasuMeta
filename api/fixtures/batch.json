@@ -1,0 +1,44 @@
+{
+  "Locale": "es-MX",
+  "Items": {
+    "1eb732044aec1079626f8d928d40e1bc": {
+      "Name": {
+        "Value": "Amenaza Virtual",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-MX",
+        "Locked": false
+      },
+      "Overview": {
+        "Value": "Milo Hoffman es un joven informático increíblemente prometedor para su edad que rápidamente es contratado por una importante empresa de Sillicon Valley. El empleo de sus sueños se ha hecho realidad, ya que ahí puede trabajar con los ordenadores más potentes del mundo y con las últimas tecnologías que aún no han salido al mercado. El Paraíso de un informático. Su jefe, Gary Winston , es un poderoso pez gordo de la industria que en un principio parece un tipo íntegro y legal. Pero pronto descubrirá que fisgar en sus archivos secretos no es la mejor idea si uno quiere conservar su trabajo... y su vida.",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-MX",
+        "Locked": false
+      },
+      "Tagline": {
+        "Value": "La verdad puede ser peligrosa... La confianza puede ser mortal.",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-MX",
+        "Locked": false
+      },
+      "UpdatedAt": "2026-11-17T05:38:52+00:00"
+    },
+    "ff39210272a627bfdd396d3f7c57c2a8": {
+      "Name": {
+        "Value": "Magia Record: Puella Magi Madoka Magica Side Story",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-MX",
+        "Locked": false
+      },
+      "Overview": {
+        "Value": "La historia se desarrolla en la ciudad de Kamihama. Allí, guiadas por un extraño poder, se reúnen chicas mágicas para combatir entre ellas y hacerse con un nuevo poder extraído de las brujas.\n\nIroha Tamaki es una joven cuya hermana menor sufre de cierta enfermedad y su deseo a cumplir como chica mágica es salvarla. Madoka Kaname llega buscando a su amiga Homura, quien está desaparecida.",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-ES",
+        "Locked": false
+      },
+      "UpdatedAt": "2026-11-17T05:38:52+00:00"
+    }
+  },
+  "Missing": [
+    "0fb78f59088fbebaaa7ec9cfb39e3e6f"
+  ]
+}

@@ -47,7 +47,7 @@ code="$(status -H "Authorization: $client, Token=\"$user_token\"" "$base/KasuMet
 if [[ "$code" == 200 ]]; then pass "GET /KasuMeta/Info as a non-admin -> 200"; else fail "as a non-admin got $code"; fi
 info="$(curl -sS -H "Authorization: $client, Token=\"$user_token\"" "$base/KasuMeta/Info")"
 echo "       $info"
-# Jellyfin serializes in PascalCase, like the rest of its API (PLAN.md §4).
+# Jellyfin serializes in PascalCase, like the rest of its API (see api/openapi.yaml).
 if grep -q '"ApiVersion":1' <<<"$info"; then pass "ApiVersion 1 (PascalCase, as Jellyfin serializes)"; else fail "unexpected body"; fi
 if grep -qi 'key' <<<"$info"; then fail "payload mentions a key"; else pass "no API keys in the payload"; fi
 

@@ -4,6 +4,28 @@ All notable changes to KasuMeta. Format: [Keep a Changelog](https://keepachangel
 
 ## [Unreleased]
 
+### Added
+- Phase 1 read path, complete:
+  - Fetch queue and background worker (de-duplicating, 4 at a time); a fetch keeps the locales
+    in the enabled locales' language groups and replaces the provider's unlocked rows, so a
+    re-identified item loses the old title's translations; locked rows always stay.
+  - Library hooks: ItemAdded/ItemUpdated queue the item (skipped when the provider ids didn't
+    change), ItemRemoved deletes its rows.
+  - Scheduled tasks under Dashboard › Scheduled Tasks › KasuMeta: "Fetch missing translations"
+    (startup + daily) and "Refresh stale translations" (daily; also retries failures).
+  - `POST /KasuMeta/Items/Batch` (≤ 200 ids, optional field filter) and
+    `GET /KasuMeta/Items/{itemId}?locale=`, resolving the locale per field and serving only
+    items the caller may see (hidden = missing).
+  - API contract `api/openapi.yaml` with examples captured live (`api/fixtures`), checked by
+    contract tests using Jellyfin's own serializer settings.
+  - `scripts/e2e-test.sh`: live end-to-end checks of the read path.
+- Fetch status `skipped` (no TMDB id, or unknown to TMDB).
+
+### Fixed
+- `KasuMetaDatabase.Dispose` releases only its own connection pool. The tests' process-wide
+  `ClearAllPools` made a parallel test fail about once in 25 runs ("Cannot access a disposed
+  object: SQLitePCL.sqlite3"); 40 consecutive runs pass now.
+
 ### Changed
 - TMDB client: movies and series now request their details with
   `append_to_response=translations` (still one call per item), because TMDB's entry for the

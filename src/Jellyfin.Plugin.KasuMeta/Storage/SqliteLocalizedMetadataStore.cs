@@ -55,6 +55,33 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     }
 
     /// <inheritdoc />
+    public Task<int> ReplaceProviderFieldsAsync(
+        Guid itemId,
+        string source,
+        IReadOnlyCollection<LocalizedField> fields,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        ArgumentException.ThrowIfNullOrWhiteSpace(source);
+        foreach (var f in fields)
+        {
+            if (f.ItemId != itemId || f.Source != source || f.Locked)
+            {
+                throw new ArgumentException("Every row must be an unlocked row of this item and source.", nameof(fields));
+            }
+
+            RequireKnown(f.Field, MetadataFields.All, nameof(LocalizedField.Field));
+            RequireLocale(f.Locale);
+        }
+
+        return UpsertAsync(
+            UpsertFieldSql,
+            fields.Select(f => (f.ItemId, f.Locale, f.Field, f.Value, f.Source, f.Locked)),
+            cancellationToken,
+            replaceUnlocked: (itemId, source));
+    }
+
+    /// <inheritdoc />
     public Task<int> UpsertImagesAsync(IReadOnlyCollection<LocalizedImage> images, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(images);
@@ -169,19 +196,23 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     public async Task<IReadOnlyList<Guid>> GetStaleItemIdsAsync(
         DateTimeOffset fetchedBefore,
         int limit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeErrors = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
         var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
         {
             await using var command = connection.CreateCommand();
+            // Skipped rows wait for a provider-id change instead (ItemUpdated), not for age.
             command.CommandText = """
                 SELECT item_id FROM fetch_state
-                WHERE last_fetch IS NULL OR last_fetch < $before
+                WHERE status <> 'skipped'
+                  AND (last_fetch IS NULL OR last_fetch < $before OR ($errors = 1 AND status = 'error'))
                 ORDER BY COALESCE(last_fetch, 0), item_id
                 LIMIT $limit;
                 """;
+            command.Parameters.AddWithValue("$errors", includeErrors ? 1 : 0);
             command.Parameters.AddWithValue("$before", fetchedBefore.ToUnixTimeSeconds());
             command.Parameters.AddWithValue("$limit", limit);
             var ids = new List<Guid>();
@@ -193,6 +224,36 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
 
             return ids;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlySet<Guid>> GetKnownItemIdsAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(itemIds);
+        var known = new HashSet<Guid>();
+        if (itemIds.Count == 0)
+        {
+            return known;
+        }
+
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            foreach (var chunk in itemIds.Distinct().Chunk(ChunkSize))
+            {
+                await using var command = connection.CreateCommand();
+                var sql = new StringBuilder("SELECT item_id FROM fetch_state WHERE item_id IN (");
+                AppendParameters(command, sql, "$i", chunk.Select(FormatId));
+                command.CommandText = sql.Append(");").ToString();
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    known.Add(ParseId(reader.GetString(0)));
+                }
+            }
+        }
+
+        return known;
     }
 
     /// <inheritdoc />
@@ -238,6 +299,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         FetchStatus.Pending => "pending",
         FetchStatus.Ok => "ok",
         FetchStatus.Error => "error",
+        FetchStatus.Skipped => "skipped",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
     };
 
@@ -246,6 +308,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         "pending" => FetchStatus.Pending,
         "ok" => FetchStatus.Ok,
         "error" => FetchStatus.Error,
+        "skipped" => FetchStatus.Skipped,
         _ => throw new InvalidDataException($"Unknown fetch status '{value}'."),
     };
 
@@ -268,7 +331,8 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     private async Task<int> UpsertAsync(
         string sql,
         IEnumerable<(Guid ItemId, string Locale, string Key, string Value, string Source, bool Locked)> rows,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        (Guid ItemId, string Source)? replaceUnlocked = null)
     {
         var now = _time.GetUtcNow().ToUnixTimeSeconds();
         var written = 0;
@@ -280,6 +344,17 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 .ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
             {
+                if (replaceUnlocked is { } replace)
+                {
+                    await using var delete = connection.CreateCommand();
+                    delete.Transaction = transaction;
+                    delete.CommandText =
+                        "DELETE FROM localized_field WHERE item_id = $item AND source = $source AND locked = 0;";
+                    delete.Parameters.AddWithValue("$item", FormatId(replace.ItemId));
+                    delete.Parameters.AddWithValue("$source", replace.Source);
+                    await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+
                 await using var command = connection.CreateCommand();
                 command.Transaction = transaction;
                 command.CommandText = sql;

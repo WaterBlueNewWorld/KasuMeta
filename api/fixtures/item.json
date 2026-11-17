@@ -1,0 +1,21 @@
+{
+  "Name": {
+    "Value": "La cabaña en el bosque",
+    "Source": "tmdb",
+    "ResolvedLocale": "es-ES",
+    "Locked": false
+  },
+  "Overview": {
+    "Value": "Cinco jóvenes se preparan para pasar el fin de semana en una aislada cabaña en el bosque, sin ningún tipo de comunicación con el exterior. En el sótano encuentran una extraña colección de reliquias y entre ellas, un diario que habla de la antigua familia que ocupó la casa. Lo que no sospechan es que están siendo observados y que sus acciones marcarán el destino de algo mucho más grande que ellos.",
+    "Source": "tmdb",
+    "ResolvedLocale": "es-ES",
+    "Locked": false
+  },
+  "Tagline": {
+    "Value": "Crees que conoces la historia",
+    "Source": "tmdb",
+    "ResolvedLocale": "es-ES",
+    "Locked": false
+  },
+  "UpdatedAt": "2026-11-17T05:38:52+00:00"
+}

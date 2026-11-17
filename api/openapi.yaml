@@ -1,0 +1,177 @@
+openapi: 3.0.3
+info:
+  title: KasuMeta
+  version: "1"
+  description: |
+    Localized metadata for the client app, served by the KasuMeta Jellyfin plugin (Jellyfin 12.x).
+
+    - **Auth:** Jellyfin's own. Send the header the client app already sends:
+      `Authorization: MediaBrowser Client="…", Device="…", DeviceId="…", Version="…", Token="…"`.
+      No token → 401.
+    - **Casing:** PascalCase, as Jellyfin serializes everything. Request bodies bind
+      case-insensitively.
+    - **Absent, not null:** Jellyfin omits null properties. A field KasuMeta has nothing for is
+      simply not in the object.
+    - **Ids:** Jellyfin item GUIDs. Responses use the dashless form `BaseItemDto.Id` uses;
+      requests accept either form.
+    - **Locales:** BCP-47 with a hyphen (`es-MX`). `es_MX` and other casings are accepted and
+      normalized.
+    - **Fallback, per field:** exact locale, then the bare language (`es`), then another region
+      of the same language in the server's enabled-locales order (`es-ES`), when the server
+      has `FallbackToBaseLanguage` on. Traditional and Simplified Chinese never stand in for
+      each other. `ResolvedLocale` says which one was served.
+    - **Visibility:** items the caller can't see are reported exactly like items with no data
+      (`Missing` / 404), so the API never reveals hidden titles.
+    - **Examples:** `api/fixtures/*.json` were captured from a live Jellyfin 12.1 server and are
+      checked by the plugin's tests; the client's tests can use the same files.
+servers:
+  - url: http://localhost:8097
+    description: KasuMeta dev server (docker/dev/compose.yaml)
+security:
+  - MediaBrowser: []
+paths:
+  /KasuMeta/Info:
+    get:
+      summary: Capability check
+      description: >
+        Called after sign-in. 200 means the plugin is installed; 404 means it isn't, and the client
+        keeps to stock Jellyfin fields. A client refuses an ApiVersion it doesn't know.
+      responses:
+        "200":
+          description: Installed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KasuMetaInfo" }
+              example: { $ref: "fixtures/info.json" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /KasuMeta/Items/Batch:
+    post:
+      summary: Localized overlays for many items (one call per grid page)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchRequest" }
+            example:
+              ItemIds: ["1eb732044aec1079626f8d928d40e1bc", "ff39210272a627bfdd396d3f7c57c2a8", "0fb78f59088fbebaaa7ec9cfb39e3e6f"]
+              Locale: es_mx
+      responses:
+        "200":
+          description: Overlays for items that have one; every other requested id is in Missing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchResponse" }
+              example: { $ref: "fixtures/batch.json" }
+        "400":
+          description: Bad locale, unknown field, or more than 200 ids. The body is a message string.
+          content:
+            application/json:
+              schema: { type: string }
+              example: "Unknown field 'Rating'. Known: name, overview, sort_name, tagline."
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: A request with neither a user nor an API key.
+  /KasuMeta/Items/{itemId}:
+    get:
+      summary: Full localized overlay of one item (detail page)
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: locale
+          in: query
+          required: true
+          schema: { type: string, example: es-ES }
+      responses:
+        "200":
+          description: The overlay.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemOverlay" }
+              example: { $ref: "fixtures/item.json" }
+        "400":
+          description: Bad locale.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Nothing to serve. The item isn't fetched yet, has no translation in any fallback locale, is unknown, or isn't visible to the caller.
+components:
+  securitySchemes:
+    MediaBrowser:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'MediaBrowser Client="…", Device="…", DeviceId="…", Version="…", Token="<access token>"'
+  responses:
+    Unauthorized:
+      description: No or invalid Jellyfin token.
+  schemas:
+    KasuMetaInfo:
+      type: object
+      required: [Name, Version, ApiVersion, EnabledLocales, FallbackToBaseLanguage]
+      properties:
+        Name: { type: string, example: KasuMeta }
+        Version: { type: string, example: 0.0.1.0 }
+        ApiVersion: { type: integer, example: 1 }
+        EnabledLocales:
+          type: array
+          items: { type: string }
+          example: [en-US, es-ES, es-MX, ja-JP, zh-CN]
+        FallbackToBaseLanguage: { type: boolean }
+    BatchRequest:
+      type: object
+      required: [ItemIds, Locale]
+      properties:
+        ItemIds:
+          type: array
+          maxItems: 200
+          items: { type: string, format: uuid }
+        Locale: { type: string, example: es-MX }
+        Fields:
+          type: array
+          description: Which fields to return; absent or empty means all. Any casing; `SortName` and `sort_name` both work.
+          items:
+            type: string
+            enum: [name, overview, tagline, sort_name]
+    BatchResponse:
+      type: object
+      required: [Locale, Items, Missing]
+      properties:
+        Locale:
+          type: string
+          description: The requested locale, normalized.
+        Items:
+          type: object
+          description: Overlays keyed by dashless item id.
+          additionalProperties: { $ref: "#/components/schemas/ItemOverlay" }
+        Missing:
+          type: array
+          description: Requested ids with nothing to serve (see 404 above). Show stock Jellyfin fields for these.
+          items: { type: string }
+    ItemOverlay:
+      type: object
+      required: [UpdatedAt]
+      description: At least one of the localized fields is present.
+      properties:
+        Name: { $ref: "#/components/schemas/LocalizedValue" }
+        Overview: { $ref: "#/components/schemas/LocalizedValue" }
+        Tagline: { $ref: "#/components/schemas/LocalizedValue" }
+        SortName: { $ref: "#/components/schemas/LocalizedValue" }
+        UpdatedAt:
+          type: string
+          format: date-time
+          description: When the newest value served here was written.
+    LocalizedValue:
+      type: object
+      required: [Value, Source, ResolvedLocale, Locked]
+      properties:
+        Value: { type: string }
+        Source:
+          type: string
+          enum: [tmdb, tvdb, anilist, manual]
+        ResolvedLocale:
+          type: string
+          description: The stored locale served; differs from the request after a fallback.
+        Locked:
+          type: boolean
+          description: An admin override that provider refreshes never replace.

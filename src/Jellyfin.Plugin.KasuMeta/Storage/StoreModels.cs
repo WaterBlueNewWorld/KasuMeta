@@ -87,6 +87,12 @@ public enum FetchStatus
 
     /// <summary>The last fetch failed; see <see cref="FetchState.LastError"/>.</summary>
     Error,
+
+    /// <summary>
+    /// Nothing to fetch: no TMDB id, or TMDB doesn't know the id (see
+    /// <see cref="FetchState.LastError"/>). Retried when the provider ids change.
+    /// </summary>
+    Skipped,
 }
 
 /// <summary>What KasuMeta knows about fetching an item.</summary>

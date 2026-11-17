@@ -184,6 +184,67 @@ public class SqliteLocalizedMetadataStoreTests
     }
 
     [Fact]
+    public async Task Replacing_provider_rows_drops_what_the_provider_no_longer_has()
+    {
+        using var db = new TestDatabase();
+        await db.Store.UpsertFieldsAsync(
+            [
+                new(Spirited, "es-MX", MetadataFields.Name, "Vieja", MetadataSources.Tmdb),
+                new(Spirited, "ja-JP", MetadataFields.Name, "古い", MetadataSources.Tmdb),
+                new(Spirited, "es-MX", MetadataFields.Overview, "Curada", MetadataSources.Manual, Locked: true),
+                new(Spirited, "en-US", MetadataFields.Name, "From TVDB", MetadataSources.Tvdb),
+                new(Other, "ja-JP", MetadataFields.Name, "他", MetadataSources.Tmdb),
+            ],
+            None);
+
+        var written = await db.Store.ReplaceProviderFieldsAsync(
+            Spirited,
+            MetadataSources.Tmdb,
+            [new(Spirited, "es-MX", MetadataFields.Name, "Nueva", MetadataSources.Tmdb)],
+            None);
+
+        var rows = await db.Store.GetFieldsAsync([Spirited, Other], null, None);
+        Assert.Equal(1, written);
+        Assert.Equal(
+            ["Curada", "From TVDB", "Nueva", "他"],
+            rows.Select(r => r.Value).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Replacing_refuses_rows_of_another_item_source_or_locked()
+    {
+        using var db = new TestDatabase();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => db.Store.ReplaceProviderFieldsAsync(
+            Spirited, MetadataSources.Tmdb, [new(Other, "es-MX", MetadataFields.Name, "x", MetadataSources.Tmdb)], None));
+        await Assert.ThrowsAsync<ArgumentException>(() => db.Store.ReplaceProviderFieldsAsync(
+            Spirited, MetadataSources.Tmdb, [new(Spirited, "es-MX", MetadataFields.Name, "x", MetadataSources.Tvdb)], None));
+        await Assert.ThrowsAsync<ArgumentException>(() => db.Store.ReplaceProviderFieldsAsync(
+            Spirited, MetadataSources.Tmdb, [new(Spirited, "es-MX", MetadataFields.Name, "x", MetadataSources.Tmdb, Locked: true)], None));
+    }
+
+    [Fact]
+    public async Task Known_ids_are_those_with_a_fetch_state()
+    {
+        using var db = new TestDatabase();
+        await db.Store.SetFetchStateAsync(new(Spirited, new Dictionary<string, string>(), null, FetchStatus.Pending), None);
+
+        var known = await db.Store.GetKnownItemIdsAsync([Spirited, Other], None);
+
+        Assert.Equal([Spirited], known);
+        Assert.Empty(await db.Store.GetKnownItemIdsAsync([], None));
+    }
+
+    [Fact]
+    public async Task Skipped_and_error_states_round_trip()
+    {
+        using var db = new TestDatabase();
+        await db.Store.SetFetchStateAsync(new(Spirited, new Dictionary<string, string>(), db.Time.Now, FetchStatus.Skipped, "No TMDB id"), None);
+
+        Assert.Equal(FetchStatus.Skipped, (await db.Store.GetFetchStateAsync(Spirited, None))!.Status);
+    }
+
+    [Fact]
     public async Task Deleting_an_item_removes_all_its_rows()
     {
         using var db = new TestDatabase();

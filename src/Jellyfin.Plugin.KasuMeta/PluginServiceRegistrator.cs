@@ -1,4 +1,7 @@
+using Jellyfin.Plugin.KasuMeta.Api;
 using Jellyfin.Plugin.KasuMeta.Configuration;
+using Jellyfin.Plugin.KasuMeta.Fetching;
+using Jellyfin.Plugin.KasuMeta.Library;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using MediaBrowser.Controller;
@@ -36,6 +39,13 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         // Providers. HttpClient comes from Jellyfin's own IHttpClientFactory (NamedClient.Default).
         serviceCollection.AddSingleton<ITmdbClient, TmdbClient>();
 
-        // Next in Phase 1: the fetch queue and worker, and the library-event hosted service.
+        // Library, fetching, API. The scheduled tasks (Tasks/) need no registration: Jellyfin
+        // finds IScheduledTask types in plugin assemblies and builds them from this container.
+        serviceCollection.AddSingleton<ILibraryItemSource, JellyfinLibraryItemSource>();
+        serviceCollection.AddSingleton<IFetchQueue, FetchQueue>();
+        serviceCollection.AddSingleton<MetadataFetcher>();
+        serviceCollection.AddHostedService<FetchWorker>();
+        serviceCollection.AddHostedService<LibraryEventsService>();
+        serviceCollection.AddSingleton<OverlayService>();
     }
 }

@@ -97,8 +97,17 @@ public sealed class KasuMetaDatabase : IDisposable
         }
     }
 
-    /// <inheritdoc />
-    public void Dispose() => _initLock.Dispose();
+    /// <summary>
+    /// Releases the lock and this database's pooled connections (and so the file). Only this
+    /// file's pool: <see cref="SqliteConnection.ClearAllPools"/> would also tear connections out
+    /// from under every other SQLite user in the process.
+    /// </summary>
+    public void Dispose()
+    {
+        _initLock.Dispose();
+        using var connection = new SqliteConnection(_connectionString);
+        SqliteConnection.ClearPool(connection);
+    }
 
     /// <summary>Checks that this SQLite build can create an FTS5 table, using a throwaway temp table.</summary>
     internal static async Task<bool> ProbeFts5Async(SqliteConnection connection, CancellationToken cancellationToken)

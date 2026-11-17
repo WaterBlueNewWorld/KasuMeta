@@ -50,14 +50,29 @@ the client's 10.11 dev server.
 dotnet build -c Release
 docker compose -f docker/dev/compose.yaml up -d
 bash scripts/dev-server-setup.sh     # first run: wizard, users, libraries; writes .env (git-ignored)
-bash scripts/smoke-test.sh           # live checks
+bash scripts/smoke-test.sh           # live checks: plugin loaded, database, auth
+bash scripts/e2e-test.sh             # live read-path checks (needs a TMDB key on the plugin page)
 docker restart kasumeta-jellyfin     # after each rebuild
 ```
+
+## API
+
+Three routes, all behind Jellyfin's own sign-in. JSON is PascalCase, as Jellyfin serializes, and
+null fields are left out. The contract is [`api/openapi.yaml`](api/openapi.yaml), with examples
+captured from a live server in [`api/fixtures`](api/fixtures).
+
+| Route | Use |
+|---|---|
+| `GET /KasuMeta/Info` | Capability check after sign-in (404 = plugin not installed) |
+| `POST /KasuMeta/Items/Batch` | Localized overlays for up to 200 items (one call per grid page) |
+| `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's overlay (detail page) |
 
 ## Status
 
 - **Done:**
   - Phase 0: `GET /KasuMeta/Info` and the configuration page work.
-  - Phase 1, steps 1–3: the SQLite store, the locale fallback helper and the TMDB client.
+  - Phase 1, the read path: store, locale fallback, TMDB client, fetch queue and worker,
+    library hooks, scheduled tasks, and the batch and item endpoints.
   - Verified live on Jellyfin 12.1.
+- **Next:** Phase 2, localized images (posters and logos per locale).
 - **Not supported yet:** Jellyfin 10.11. It's kept as a future option.

@@ -9,6 +9,18 @@ public interface ILocalizedMetadataStore
     /// <returns>How many rows were actually written (skipped locked rows don't count).</returns>
     Task<int> UpsertFieldsAsync(IReadOnlyCollection<LocalizedField> fields, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Replaces, in one transaction, every unlocked row this <paramref name="source"/> holds for
+    /// the item with <paramref name="fields"/>. Rows the provider no longer has go away (they may
+    /// belong to a title the item was identified as before); locked rows and other sources stay.
+    /// </summary>
+    /// <returns>How many rows were written.</returns>
+    Task<int> ReplaceProviderFieldsAsync(
+        Guid itemId,
+        string source,
+        IReadOnlyCollection<LocalizedField> fields,
+        CancellationToken cancellationToken);
+
     /// <summary>Gets the stored text values of the given items, optionally only for some locales.</summary>
     Task<IReadOnlyList<LocalizedField>> GetFieldsAsync(
         IReadOnlyCollection<Guid> itemIds,
@@ -32,13 +44,18 @@ public interface ILocalizedMetadataStore
     Task<FetchState?> GetFetchStateAsync(Guid itemId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Gets items never fetched or last fetched before <paramref name="fetchedBefore"/>,
-    /// oldest first.
+    /// Gets items never fetched or last fetched before <paramref name="fetchedBefore"/>, oldest
+    /// first; with <paramref name="includeErrors"/>, failed items whatever their age. Skipped
+    /// items (nothing to fetch) are never stale: a provider-id change re-queues them.
     /// </summary>
     Task<IReadOnlyList<Guid>> GetStaleItemIdsAsync(
         DateTimeOffset fetchedBefore,
         int limit,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool includeErrors = false);
+
+    /// <summary>Gets which of the given items have a fetch state (were ever queued).</summary>
+    Task<IReadOnlySet<Guid>> GetKnownItemIdsAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken);
 
     /// <summary>Removes everything stored for an item (it left the library).</summary>
     Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken);
