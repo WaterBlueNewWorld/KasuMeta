@@ -60,5 +60,4 @@ docker restart kasumeta-jellyfin     # after each rebuild
   - Phase 0: `GET /KasuMeta/Info` and the configuration page work.
   - Phase 1, steps 1–3: the SQLite store, the locale fallback helper and the TMDB client.
   - Verified live on Jellyfin 12.1.
-- **Not supported yet:** Jellyfin 10.11. It's kept as a future option; see PLAN.md §8.
-- **Roadmap:** see [PLAN.md](PLAN.md).
+- **Not supported yet:** Jellyfin 10.11. It's kept as a future option.
