@@ -54,7 +54,46 @@ internal static class Migrations
             ALTER TABLE fetch_state ADD COLUMN fetch_version INTEGER NOT NULL DEFAULT 1;
             """),
 
-        // Phase 3 adds the FTS5 table here as version 3.
+        // Phase 3: every localized name in one plain table, kept exact by triggers on
+        // localized_field, so no write path can forget it. Search reads this table; the FTS5
+        // index over it is derived and optional (SearchIndex), which is why it isn't created
+        // here: a server whose SQLite lacks FTS5 must still migrate.
+        (3, """
+            -- The item's kind (Movie, Series, Season, Episode), so search can filter and rank by
+            -- it without asking Jellyfin about every candidate. NULL until the next fetch.
+            ALTER TABLE fetch_state ADD COLUMN kind TEXT;
+
+            CREATE TABLE meta (
+              key   TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            ) WITHOUT ROWID;
+
+            CREATE TABLE search_name (
+              id      INTEGER PRIMARY KEY,           -- rowid, the FTS index's key
+              item_id TEXT NOT NULL,
+              locale  TEXT NOT NULL,
+              name    TEXT NOT NULL,
+              UNIQUE (item_id, locale)
+            );
+
+            CREATE TRIGGER localized_field_name_insert AFTER INSERT ON localized_field
+            WHEN new.field = 'name' BEGIN
+              INSERT INTO search_name (item_id, locale, name) VALUES (new.item_id, new.locale, new.value);
+            END;
+
+            CREATE TRIGGER localized_field_name_update AFTER UPDATE OF value ON localized_field
+            WHEN new.field = 'name' BEGIN
+              UPDATE search_name SET name = new.value WHERE item_id = new.item_id AND locale = new.locale;
+            END;
+
+            CREATE TRIGGER localized_field_name_delete AFTER DELETE ON localized_field
+            WHEN old.field = 'name' BEGIN
+              DELETE FROM search_name WHERE item_id = old.item_id AND locale = old.locale;
+            END;
+
+            INSERT INTO search_name (item_id, locale, name)
+            SELECT item_id, locale, value FROM localized_field WHERE field = 'name';
+            """),
     ];
 
     /// <summary>Gets the newest schema version this build knows.</summary>

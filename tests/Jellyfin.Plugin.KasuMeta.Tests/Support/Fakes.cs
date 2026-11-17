@@ -36,6 +36,18 @@ internal sealed class FakeLibrary : ILibraryItemSource
     public IReadOnlyList<Guid> FilterVisible(Guid userId, IReadOnlyCollection<Guid> itemIds) =>
         itemIds.Where(id => Items.ContainsKey(id) && VisibleTo.TryGetValue(userId, out var set) && set.Contains(id)).ToList();
 
+    public IReadOnlyList<LibraryItemInfo> GetVisibleItems(Guid? userId, IReadOnlyCollection<Guid> itemIds) =>
+        itemIds
+            .Where(id => Items.ContainsKey(id) && (userId is null || (VisibleTo.TryGetValue(userId.Value, out var set) && set.Contains(id))))
+            .Select(id => Items[id])
+            .ToList();
+
+    public static LibraryItemInfo Series(Guid id, string? tmdb) =>
+        new(id, ItemKind.Series, Ids(tmdb), Ids(null));
+
+    public static LibraryItemInfo Season(Guid id, string? seriesTmdb, int? season) =>
+        new(id, ItemKind.Season, Ids(null), Ids(seriesTmdb), season);
+
     public static LibraryItemInfo Movie(Guid id, string? tmdb) =>
         new(id, ItemKind.Movie, Ids(tmdb), Ids(null));
 

@@ -4,6 +4,7 @@ using Jellyfin.Plugin.KasuMeta.Api.Models;
 using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Library;
 using Jellyfin.Plugin.KasuMeta.Localization;
+using Jellyfin.Plugin.KasuMeta.Search;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -27,6 +28,22 @@ public class KasuMetaController : ControllerBase
     /// <summary>Most ids per batch request.</summary>
     public const int MaxBatchSize = 200;
 
+    /// <summary>Search results returned when the request names no limit.</summary>
+    public const int DefaultSearchLimit = 20;
+
+    /// <summary>Most search results per request.</summary>
+    public const int MaxSearchLimit = 100;
+
+    /// <summary>
+    /// What this build can do beyond the Info route, for clients to switch on. The API grows by
+    /// adding routes and optional properties (ApiVersion stays), so "is search there?" is asked
+    /// here rather than guessed from a version number.
+    /// </summary>
+    internal static readonly string[] Features = ["text", "images", "search"];
+
+    private static readonly IReadOnlySet<ItemKind> DefaultSearchKinds =
+        new HashSet<ItemKind> { ItemKind.Movie, ItemKind.Series, ItemKind.Episode };
+
     // Claim types Jellyfin's authentication handler sets (Jellyfin.Api.Constants.InternalClaimTypes,
     // not on NuGet, hence the literals).
     internal const string UserIdClaim = "Jellyfin-UserId";
@@ -34,12 +51,18 @@ public class KasuMetaController : ControllerBase
 
     private readonly IKasuMetaConfigProvider _config;
     private readonly OverlayService _overlays;
+    private readonly SearchService _search;
     private readonly ILibraryItemSource _library;
 
-    public KasuMetaController(IKasuMetaConfigProvider config, OverlayService overlays, ILibraryItemSource library)
+    public KasuMetaController(
+        IKasuMetaConfigProvider config,
+        OverlayService overlays,
+        SearchService search,
+        ILibraryItemSource library)
     {
         _config = config;
         _overlays = overlays;
+        _search = search;
         _library = library;
     }
 
@@ -58,7 +81,8 @@ public class KasuMetaController : ControllerBase
             Version: _config.PluginVersion.ToString(),
             ApiVersion: ApiVersion,
             EnabledLocales: config.EnabledLocales,
-            FallbackToBaseLanguage: config.FallbackToBaseLanguage);
+            FallbackToBaseLanguage: config.FallbackToBaseLanguage,
+            Features: Features);
     }
 
     /// <summary>Localized overlays (text and images) for many items at once (one call per grid page).</summary>
@@ -132,6 +156,87 @@ public class KasuMetaController : ControllerBase
         return batch.Items.Values.FirstOrDefault() is { } overlay ? overlay : NotFound();
     }
 
+    /// <summary>
+    /// Finds items by their localized names, in any stored locale: names in the caller's locale
+    /// rank first. Case and accents don't matter ("cabana" finds "La cabaña del terror"), the last
+    /// word matches as a prefix, and text in scripts written without spaces matches anywhere.
+    /// </summary>
+    /// <param name="q">What the user typed.</param>
+    /// <param name="locale">The caller's BCP-47 locale.</param>
+    /// <param name="limit">Most results (1 to <see cref="MaxSearchLimit"/>; default <see cref="DefaultSearchLimit"/>).</param>
+    /// <param name="types">Comma-separated kinds: Movie, Series, Season, Episode. Default: all but Season.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <response code="200">The matches the caller may see, best first, one per item.</response>
+    /// <response code="400">No searchable text in q, bad locale, limit out of range, or an unknown type.</response>
+    [HttpGet("Search")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<SearchResponse>> Search(
+        [FromQuery] string? q,
+        [FromQuery] string? locale,
+        [FromQuery] int? limit,
+        [FromQuery] string? types,
+        CancellationToken cancellationToken)
+    {
+        var query = SearchQuery.Parse(q);
+        if (query.IsEmpty)
+        {
+            return BadRequest("q must contain at least one letter or digit.");
+        }
+
+        if (!LocaleChain.TryNormalize(locale, out var normalized))
+        {
+            return BadRequest("Locale must be a BCP-47 code such as es-MX.");
+        }
+
+        var count = limit ?? DefaultSearchLimit;
+        if (count is < 1 or > MaxSearchLimit)
+        {
+            return BadRequest($"limit must be between 1 and {MaxSearchLimit}.");
+        }
+
+        if (!TryParseKinds(types, out var kinds, out var unknown))
+        {
+            return BadRequest($"Unknown type '{unknown}'. Known: {string.Join(", ", Enum.GetNames<ItemKind>())}.");
+        }
+
+        if (!TryGetCaller(out var userId))
+        {
+            return Forbid();
+        }
+
+        return await _search.SearchAsync(query, normalized, count, kinds, userId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Parses the comma-separated kinds; null or blank means movies, series and episodes.</summary>
+    internal static bool TryParseKinds(string? requested, out IReadOnlySet<ItemKind> kinds, out string? unknown)
+    {
+        unknown = null;
+        if (string.IsNullOrWhiteSpace(requested))
+        {
+            kinds = DefaultSearchKinds;
+            return true;
+        }
+
+        var set = new HashSet<ItemKind>();
+        foreach (var raw in requested.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            // Names only: Enum.TryParse would also take "2".
+            if (!Enum.GetNames<ItemKind>().Any(n => string.Equals(n, raw, StringComparison.OrdinalIgnoreCase)))
+            {
+                unknown = raw;
+                kinds = set;
+                return false;
+            }
+
+            set.Add(Enum.Parse<ItemKind>(raw, ignoreCase: true));
+        }
+
+        kinds = set;
+        return true;
+    }
+
     internal static bool TryParseFields(IReadOnlyList<string>? requested, out IReadOnlySet<string> fields, out string? unknown)
     {
         unknown = null;
@@ -197,20 +302,30 @@ public class KasuMetaController : ControllerBase
     /// </summary>
     private bool TryVisible(IReadOnlyCollection<Guid> ids, out IReadOnlyCollection<Guid> visible)
     {
+        if (!TryGetCaller(out var userId))
+        {
+            visible = [];
+            return false;
+        }
+
+        visible = userId is { } id ? _library.FilterVisible(id, ids).ToHashSet() : ids.ToHashSet();
+        return true;
+    }
+
+    /// <summary>
+    /// Identifies the caller from Jellyfin's claims: a user id, or null for an API key (which
+    /// sees everything). False when the request carries neither.
+    /// </summary>
+    private bool TryGetCaller(out Guid? userId)
+    {
         var principal = User ?? new ClaimsPrincipal();
-        if (Guid.TryParse(principal.FindFirst(UserIdClaim)?.Value, out var userId) && userId != Guid.Empty)
+        if (Guid.TryParse(principal.FindFirst(UserIdClaim)?.Value, out var id) && id != Guid.Empty)
         {
-            visible = _library.FilterVisible(userId, ids).ToHashSet();
+            userId = id;
             return true;
         }
 
-        if (bool.TryParse(principal.FindFirst(IsApiKeyClaim)?.Value, out var isApiKey) && isApiKey)
-        {
-            visible = ids.ToHashSet();
-            return true;
-        }
-
-        visible = [];
-        return false;
+        userId = null;
+        return bool.TryParse(principal.FindFirst(IsApiKeyClaim)?.Value, out var isApiKey) && isApiKey;
     }
 }

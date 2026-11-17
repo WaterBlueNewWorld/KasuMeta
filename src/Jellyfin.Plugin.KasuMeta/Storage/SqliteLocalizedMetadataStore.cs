@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Jellyfin.Plugin.KasuMeta.Library;
+using Jellyfin.Plugin.KasuMeta.Search;
 using Microsoft.Data.Sqlite;
 
 namespace Jellyfin.Plugin.KasuMeta.Storage;
@@ -182,12 +184,12 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         {
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status, last_error, fetch_version)
-                VALUES ($item, $ids, $last, $status, $error, $version)
+                INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status, last_error, fetch_version, kind)
+                VALUES ($item, $ids, $last, $status, $error, $version, $kind)
                 ON CONFLICT (item_id) DO UPDATE SET
                   provider_ids = excluded.provider_ids, last_fetch = excluded.last_fetch,
                   status = excluded.status, last_error = excluded.last_error,
-                  fetch_version = excluded.fetch_version;
+                  fetch_version = excluded.fetch_version, kind = excluded.kind;
                 """;
             command.Parameters.AddWithValue("$item", FormatId(state.ItemId));
             command.Parameters.AddWithValue("$ids", SerializeProviderIds(state.ProviderIds));
@@ -195,6 +197,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
             command.Parameters.AddWithValue("$status", FormatStatus(state.Status));
             command.Parameters.AddWithValue("$error", (object?)state.LastError ?? DBNull.Value);
             command.Parameters.AddWithValue("$version", state.FetchVersion);
+            command.Parameters.AddWithValue("$kind", (object?)state.Kind?.ToString() ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -207,7 +210,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         {
             await using var command = connection.CreateCommand();
             command.CommandText =
-                "SELECT provider_ids, last_fetch, status, last_error, fetch_version FROM fetch_state WHERE item_id = $item;";
+                "SELECT provider_ids, last_fetch, status, last_error, fetch_version, kind FROM fetch_state WHERE item_id = $item;";
             command.Parameters.AddWithValue("$item", FormatId(itemId));
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -221,7 +224,8 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 reader.IsDBNull(1) ? null : DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(1)),
                 ParseStatus(reader.GetString(2)),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.GetInt32(4));
+                reader.GetInt32(4),
+                reader.IsDBNull(5) ? null : ParseKind(reader.GetString(5)));
         }
     }
 
@@ -294,6 +298,95 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<NameHit>> SearchNamesAsync(
+        SearchQuery query,
+        IReadOnlySet<ItemKind> kinds,
+        int maxCandidates,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(kinds);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCandidates);
+        var hits = new List<NameHit>();
+        if (query.IsEmpty || kinds.Count == 0)
+        {
+            return hits;
+        }
+
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            await using var command = connection.CreateCommand();
+            var match = _database.SearchIndexReady ? query.ToMatchExpression() : null;
+            var sql = new StringBuilder();
+            IEnumerable<string> substrings;
+            if (match is not null)
+            {
+                // Word terms through the index (case and accents folded, last term a prefix),
+                // best BM25 first; terms in scripts without spaces as substrings on the name.
+                sql.Append("""
+                    SELECT s.item_id, s.locale, s.name, localized_search.rank, f.kind
+                    FROM localized_search
+                    JOIN search_name s ON s.id = localized_search.rowid
+                    LEFT JOIN fetch_state f ON f.item_id = s.item_id
+                    WHERE localized_search MATCH $match
+                    """);
+                command.Parameters.AddWithValue("$match", match);
+                substrings = query.SubstringTerms;
+            }
+            else
+            {
+                // No index (or no word terms): every term as a substring, shortest names first.
+                sql.Append("""
+                    SELECT s.item_id, s.locale, s.name, 0.0, f.kind
+                    FROM search_name s
+                    LEFT JOIN fetch_state f ON f.item_id = s.item_id
+                    WHERE 1 = 1
+                    """);
+                substrings = query.WordTerms.Concat(query.SubstringTerms);
+            }
+
+            var index = 0;
+            foreach (var term in substrings)
+            {
+                var name = string.Create(CultureInfo.InvariantCulture, $"$like{index++}");
+                sql.Append(" AND s.name LIKE ").Append(name).Append(" ESCAPE '\\'");
+                command.Parameters.AddWithValue(name, SearchQuery.ToLikePattern(term));
+            }
+
+            // Kinds not wanted never reach the candidate cap. A kind not recorded yet (an item
+            // fetched before kinds were stored) passes; the caller checks it against the library.
+            sql.Append(" AND (f.kind IS NULL OR f.kind IN (");
+            var kindIndex = 0;
+            foreach (var kind in kinds)
+            {
+                var name = string.Create(CultureInfo.InvariantCulture, $"$kind{kindIndex}");
+                sql.Append(kindIndex++ == 0 ? string.Empty : ", ").Append(name);
+                command.Parameters.AddWithValue(name, kind.ToString());
+            }
+
+            sql.Append("))");
+            sql.Append(match is not null ? " ORDER BY localized_search.rank" : " ORDER BY length(s.name), s.name");
+            sql.Append(" LIMIT $limit;");
+            command.Parameters.AddWithValue("$limit", maxCandidates);
+            command.CommandText = sql.ToString();
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                hits.Add(new NameHit(
+                    ParseId(reader.GetString(0)),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetDouble(3),
+                    reader.IsDBNull(4) ? null : ParseKind(reader.GetString(4))));
+            }
+        }
+
+        return hits;
+    }
+
+    /// <inheritdoc />
     public async Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken)
     {
         var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -330,6 +423,10 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? [];
 
     private static Guid ParseId(string value) => Guid.ParseExact(value, "N");
+
+    /// <summary>Reads a stored kind; an unknown name (written by a newer build) reads as "not recorded".</summary>
+    private static ItemKind? ParseKind(string value) =>
+        Enum.TryParse<ItemKind>(value, out var kind) && Enum.IsDefined(kind) ? kind : null;
 
     private static string FormatStatus(FetchStatus status) => status switch
     {

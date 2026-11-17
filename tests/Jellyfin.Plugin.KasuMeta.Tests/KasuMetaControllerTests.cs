@@ -46,6 +46,58 @@ public sealed class KasuMetaControllerTests : IDisposable
         Assert.Equal(("KasuMeta", "1.2.3.0", KasuMetaController.ApiVersion), (info.Name, info.Version, info.ApiVersion));
         Assert.Equal(["es-MX", "ja-JP"], info.EnabledLocales);
         Assert.False(info.FallbackToBaseLanguage);
+        Assert.Equal(["text", "images", "search"], info.Features);
+    }
+
+    [Fact]
+    public async Task Search_finds_what_the_user_may_see()
+    {
+        await SeedAsync();
+
+        var visible = (await Controller(user: UserId).Search("pelicula", "es-MX", null, null, None)).Value!;
+        var restricted = (await Controller(user: UserId).Search("prohibida", "es-MX", null, null, None)).Value!;
+        var asApiKey = (await Controller(apiKey: true).Search("prohibida", "es-MX", null, null, None)).Value!;
+
+        var result = Assert.Single(visible.Results);
+        Assert.Equal((Visible.ToString("N"), "Movie", "La película", "es-MX"), (result.ItemId, result.Type, result.MatchedName, result.MatchedLocale));
+        Assert.Empty(restricted.Results);
+        Assert.Single(asApiKey.Results);
+    }
+
+    [Theory]
+    [InlineData(null, "es-MX", null, null)]
+    [InlineData("  ", "es-MX", null, null)]
+    [InlineData("!?", "es-MX", null, null)]
+    [InlineData("pelicula", "not a locale", null, null)]
+    [InlineData("pelicula", null, null, null)]
+    [InlineData("pelicula", "es-MX", 0, null)]
+    [InlineData("pelicula", "es-MX", 101, null)]
+    [InlineData("pelicula", "es-MX", null, "Movie,Album")]
+    [InlineData("pelicula", "es-MX", null, "1")]
+    public async Task A_bad_search_request_is_a_bad_request(string? q, string? locale, int? limit, string? types)
+    {
+        var result = await Controller(user: UserId).Search(q, locale, limit, types, None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task Search_without_a_user_or_api_key_is_forbidden()
+    {
+        var result = await Controller().Search("pelicula", "es-MX", null, null, None);
+
+        Assert.IsType<ForbidResult>(result.Result);
+    }
+
+    [Theory]
+    [InlineData(null, "Episode,Movie,Series")]
+    [InlineData("", "Episode,Movie,Series")]
+    [InlineData("movie", "Movie")]
+    [InlineData(" Series , SEASON ", "Season,Series")]
+    public void Search_types_default_to_all_but_seasons(string? raw, string expected)
+    {
+        Assert.True(KasuMetaController.TryParseKinds(raw, out var kinds, out _));
+        Assert.Equal(expected, string.Join(',', kinds.Select(k => k.ToString()).Order(StringComparer.Ordinal)));
     }
 
     [Fact]
@@ -244,7 +296,7 @@ public sealed class KasuMetaControllerTests : IDisposable
             claims.Add(new Claim(KasuMetaController.IsApiKeyClaim, "True"));
         }
 
-        return new KasuMetaController(_config, new OverlayService(_db.Store, _config), _library)
+        return new KasuMetaController(_config, new OverlayService(_db.Store, _config), new SearchService(_db.Store, _library), _library)
         {
             ControllerContext = new ControllerContext
             {

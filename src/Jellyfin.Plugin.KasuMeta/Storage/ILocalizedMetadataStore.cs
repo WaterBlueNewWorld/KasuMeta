@@ -1,3 +1,6 @@
+using Jellyfin.Plugin.KasuMeta.Library;
+using Jellyfin.Plugin.KasuMeta.Search;
+
 namespace Jellyfin.Plugin.KasuMeta.Storage;
 
 /// <summary>Reads and writes KasuMeta's localized metadata.</summary>
@@ -70,6 +73,18 @@ public interface ILocalizedMetadataStore
         IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken,
         int minFetchVersion = 0);
+
+    /// <summary>
+    /// Finds localized names matching the query, in any locale, best match first: through the
+    /// full-text index when it exists, by substring otherwise. Only items of the given kinds, or
+    /// whose kind isn't recorded yet. Several rows may belong to one item (one per matching
+    /// locale); the caller ranks, de-duplicates and filters by visibility.
+    /// </summary>
+    Task<IReadOnlyList<NameHit>> SearchNamesAsync(
+        SearchQuery query,
+        IReadOnlySet<ItemKind> kinds,
+        int maxCandidates,
+        CancellationToken cancellationToken);
 
     /// <summary>Removes everything stored for an item (it left the library).</summary>
     Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken);

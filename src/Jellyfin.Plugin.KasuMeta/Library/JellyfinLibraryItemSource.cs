@@ -56,6 +56,32 @@ internal sealed class JellyfinLibraryItemSource : ILibraryItemSource
         return visible;
     }
 
+    public IReadOnlyList<LibraryItemInfo> GetVisibleItems(Guid? userId, IReadOnlyCollection<Guid> itemIds)
+    {
+        var user = userId is { } id ? _userManager.GetUserById(id) : null;
+        if (userId is not null && user is null)
+        {
+            return [];
+        }
+
+        var visible = new List<LibraryItemInfo>(itemIds.Count);
+        foreach (var itemId in itemIds)
+        {
+            var item = _libraryManager.GetItemById(itemId);
+            if (item is null || (user is not null && !item.IsVisibleStandalone(user)))
+            {
+                continue;
+            }
+
+            if (FromItem(item) is { } info)
+            {
+                visible.Add(info);
+            }
+        }
+
+        return visible;
+    }
+
     /// <summary>Maps a Jellyfin item, or returns null for kinds KasuMeta doesn't handle.</summary>
     internal static LibraryItemInfo? FromItem(BaseItem? item)
     {

@@ -9,5 +9,10 @@
     "ja-JP",
     "zh-CN"
   ],
-  "FallbackToBaseLanguage": true
+  "FallbackToBaseLanguage": true,
+  "Features": [
+    "text",
+    "images",
+    "search"
+  ]
 }

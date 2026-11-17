@@ -1,3 +1,5 @@
+using Jellyfin.Plugin.KasuMeta.Library;
+
 namespace Jellyfin.Plugin.KasuMeta.Storage;
 
 /// <summary>Text fields KasuMeta localizes. The values are what the store and the API use.</summary>
@@ -80,6 +82,14 @@ public sealed record LocalizedImage(
     public DateTimeOffset UpdatedAt { get; init; }
 }
 
+/// <summary>A localized name that matched a search.</summary>
+/// <param name="ItemId">The Jellyfin item id.</param>
+/// <param name="Locale">The locale of the matching name.</param>
+/// <param name="Name">The matching name.</param>
+/// <param name="Score">FTS5's BM25 rank (lower is better); 0 for substring matches.</param>
+/// <param name="Kind">The item's kind, or null if its last fetch predates kinds being stored.</param>
+public sealed record NameHit(Guid ItemId, string Locale, string Name, double Score, ItemKind? Kind = null);
+
 /// <summary>Outcome of the last fetch for an item.</summary>
 public enum FetchStatus
 {
@@ -108,13 +118,16 @@ public enum FetchStatus
 /// <param name="Status">The outcome of that fetch.</param>
 /// <param name="LastError">The error message when <paramref name="Status"/> is Error.</param>
 /// <param name="FetchVersion">
-/// Which fetch logic produced this state (1 = text only, 2 = text and images). An item below the
-/// current version is fetched again, so new data kinds reach items fetched by older builds.
+/// Which fetch logic produced this state (1 = text only, 2 = adds images, 3 = adds the item's
+/// kind). An item below the current version is fetched again, so new data reaches items fetched
+/// by older builds.
 /// </param>
+/// <param name="Kind">The item's kind, or null if not recorded yet.</param>
 public sealed record FetchState(
     Guid ItemId,
     IReadOnlyDictionary<string, string> ProviderIds,
     DateTimeOffset? LastFetch,
     FetchStatus Status,
     string? LastError = null,
-    int FetchVersion = 1);
+    int FetchVersion = 1,
+    ItemKind? Kind = null);

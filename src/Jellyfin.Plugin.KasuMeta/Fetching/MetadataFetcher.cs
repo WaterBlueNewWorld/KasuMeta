@@ -36,10 +36,11 @@ public enum FetchResult
 public sealed class MetadataFetcher
 {
     /// <summary>
-    /// Version of what a fetch stores: 1 = text, 2 = text and images. Raise it whenever a fetch
-    /// starts storing something new; the backfill then re-queues items fetched by older builds.
+    /// Version of what a fetch stores: 1 = text, 2 = adds images, 3 = adds the item's kind (for
+    /// search). Raise it whenever a fetch starts storing something new; the backfill then
+    /// re-queues items fetched by older builds.
     /// </summary>
-    public const int FetchVersion = 2;
+    public const int FetchVersion = 3;
 
     private readonly ILibraryItemSource _library;
     private readonly ILocalizedMetadataStore _store;
@@ -89,7 +90,7 @@ public sealed class MetadataFetcher
             var (call, skipReason) = PlanCall(item);
             if (call is null)
             {
-                await SetStateAsync(itemId, snapshot, FetchStatus.Skipped, skipReason, cancellationToken).ConfigureAwait(false);
+                await SetStateAsync(item, snapshot, FetchStatus.Skipped, skipReason, cancellationToken).ConfigureAwait(false);
                 return FetchResult.Skipped;
             }
 
@@ -97,13 +98,13 @@ public sealed class MetadataFetcher
         }
         catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
-            await SetStateAsync(itemId, snapshot, FetchStatus.Error, ex.Message, cancellationToken).ConfigureAwait(false);
+            await SetStateAsync(item, snapshot, FetchStatus.Error, ex.Message, cancellationToken).ConfigureAwait(false);
             return FetchResult.Failed;
         }
 
         if (title is null)
         {
-            await SetStateAsync(itemId, snapshot, FetchStatus.Skipped, "TMDB has no such title (404)", cancellationToken)
+            await SetStateAsync(item, snapshot, FetchStatus.Skipped, "TMDB has no such title (404)", cancellationToken)
                 .ConfigureAwait(false);
             return FetchResult.Skipped;
         }
@@ -115,7 +116,7 @@ public sealed class MetadataFetcher
         await _store
             .ReplaceProviderImagesAsync(itemId, MetadataSources.Tmdb, ToImages(itemId, title.Images, enabled), cancellationToken)
             .ConfigureAwait(false);
-        await SetStateAsync(itemId, snapshot, FetchStatus.Ok, null, cancellationToken).ConfigureAwait(false);
+        await SetStateAsync(item, snapshot, FetchStatus.Ok, null, cancellationToken).ConfigureAwait(false);
         return FetchResult.Fetched;
     }
 
@@ -210,12 +211,12 @@ public sealed class MetadataFetcher
     }
 
     private Task SetStateAsync(
-        Guid itemId,
+        LibraryItemInfo item,
         IReadOnlyDictionary<string, string> snapshot,
         FetchStatus status,
         string? error,
         CancellationToken cancellationToken) =>
         _store.SetFetchStateAsync(
-            new FetchState(itemId, snapshot, _time.GetUtcNow(), status, error, FetchVersion),
+            new FetchState(item.Id, snapshot, _time.GetUtcNow(), status, error, FetchVersion, item.Kind),
             cancellationToken);
 }

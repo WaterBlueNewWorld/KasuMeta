@@ -57,7 +57,7 @@ docker restart kasumeta-jellyfin     # after each rebuild
 
 ## API
 
-Three routes, all behind Jellyfin's own sign-in. JSON is PascalCase, as Jellyfin serializes, and
+Four routes, all behind Jellyfin's own sign-in. JSON is PascalCase, as Jellyfin serializes, and
 null fields are left out. The contract is [`api/openapi.yaml`](api/openapi.yaml), with examples
 captured from a live server in [`api/fixtures`](api/fixtures).
 
@@ -66,6 +66,11 @@ captured from a live server in [`api/fixtures`](api/fixtures).
 | `GET /KasuMeta/Info` | Capability check after sign-in (404 = plugin not installed) |
 | `POST /KasuMeta/Items/Batch` | Localized titles, overviews, taglines and images for up to 200 items (one call per grid page) |
 | `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's overlay (detail page) |
+| `GET /KasuMeta/Search?q=cabana&locale=es-MX` | Find items by their localized names, in any enabled language |
+
+Search ignores case and accents, treats the last word as a prefix, and matches Chinese, Japanese,
+Korean and Thai text anywhere in a title. It returns ids; the app fetches the items from Jellyfin.
+`Info.Features` lists what a given plugin build serves (`text`, `images`, `search`).
 
 ## Status
 
@@ -74,6 +79,7 @@ captured from a live server in [`api/fixtures`](api/fixtures).
   - Phase 1, the read path: store, locale fallback, TMDB client, fetch queue and worker,
     library hooks, scheduled tasks, and the batch and item endpoints.
   - Phase 2: localized posters, logos and backdrops per locale.
+  - Phase 3: search over localized titles.
   - Verified live on Jellyfin 12.1.
-- **Next:** Phase 3, search over localized titles.
+- **Next:** Phase 4, manual overrides (edit and lock translations) and anime titles from AniList.
 - **Not supported yet:** Jellyfin 10.11. It's kept as a future option.

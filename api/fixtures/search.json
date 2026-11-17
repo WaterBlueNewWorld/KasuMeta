@@ -1,0 +1,18 @@
+{
+  "Query": "revue",
+  "Locale": "es-MX",
+  "Results": [
+    {
+      "ItemId": "8956d642e26e3b66a9e13b34e8526652",
+      "Type": "Series",
+      "MatchedName": "Shoujo ☆ Kageki Revue Starlight",
+      "MatchedLocale": "es-MX"
+    },
+    {
+      "ItemId": "12a0ee38ceaa905e76c38d11301a2336",
+      "Type": "Episode",
+      "MatchedName": "Revue starlight",
+      "MatchedLocale": "es-MX"
+    }
+  ]
+}

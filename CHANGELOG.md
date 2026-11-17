@@ -5,6 +5,21 @@ All notable changes to KasuMeta. Format: [Keep a Changelog](https://keepachangel
 ## [Unreleased]
 
 ### Added
+- Phase 3, search over localized names:
+  - `GET /KasuMeta/Search?q=&locale=&limit=&types=`: names in every stored locale, so a title is
+    found by its name in any enabled language; one result per item, reported under the caller's
+    locale when it matched there; only items the caller may see.
+  - Words go through an FTS5 index (case and accents folded, every word required, the last a
+    prefix). Text in scripts written without spaces (Chinese, Japanese, Korean, Thai) matches as
+    a substring, because the tokenizer makes one token of a whole title.
+  - Ranking: exact name, then starts-with, then contains; movies and series before seasons
+    before episodes; the caller's locale before its language's other regions before the rest.
+  - Schema 3: `search_name` (every localized name, kept exact by triggers), the item's kind in
+    the fetch state, and a `meta` table. The FTS5 index is derived: built at startup, rebuilt
+    when its definition changes, and skipped on a SQLite without FTS5, where search falls back
+    to substring matching.
+  - Fetch version 3 (records the item's kind); older items are re-queued by the backfill.
+  - `Info.Features` (`text`, `images`, `search`) so clients can tell what a build serves.
 - Phase 2, localized images:
   - Posters (`Primary`), logos and backdrops per locale from TMDB, in the same single request
     per item (`append_to_response=translations,images`, `include_image_language` = the enabled

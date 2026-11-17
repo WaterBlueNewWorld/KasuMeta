@@ -17,14 +17,19 @@ internal sealed class TestDatabase : IDisposable
 {
     private readonly string _folder;
 
-    public TestDatabase()
+    /// <param name="fts5">Null: probe the bundled SQLite (it has FTS5). False: pretend it hasn't.</param>
+    public TestDatabase(bool? fts5 = null)
     {
         _folder = Path.Combine(Path.GetTempPath(), "kasumeta-tests", Guid.NewGuid().ToString("N"));
         DbPath = Path.Combine(_folder, "nested", "kasumeta.db");
         Time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 16, 12, 0, 0, TimeSpan.Zero));
-        Database = new KasuMetaDatabase(DbPath, Time, NullLogger<KasuMetaDatabase>.Instance);
+        Database = Open(fts5);
         Store = new SqliteLocalizedMetadataStore(Database, Time);
     }
+
+    /// <summary>Opens the same file again, as a server restart (or another server) would.</summary>
+    public KasuMetaDatabase Open(bool? fts5 = null) =>
+        new(DbPath, Time, NullLogger<KasuMetaDatabase>.Instance) { Fts5Override = fts5 };
 
     public string DbPath { get; }
 

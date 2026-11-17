@@ -14,4 +14,10 @@ public interface ILibraryItemSource
     /// are dropped too, so a caller can't tell "hidden" from "doesn't exist".
     /// </summary>
     IReadOnlyList<Guid> FilterVisible(Guid userId, IReadOnlyCollection<Guid> itemIds);
+
+    /// <summary>
+    /// Gets the items among <paramref name="itemIds"/> that exist, are a kind KasuMeta handles and
+    /// that the user may see, in the order given. A null user (an API key) sees everything.
+    /// </summary>
+    IReadOnlyList<LibraryItemInfo> GetVisibleItems(Guid? userId, IReadOnlyCollection<Guid> itemIds);
 }

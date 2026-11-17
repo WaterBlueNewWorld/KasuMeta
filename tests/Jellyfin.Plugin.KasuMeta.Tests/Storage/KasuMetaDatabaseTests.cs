@@ -1,3 +1,5 @@
+using Jellyfin.Plugin.KasuMeta.Library;
+using Jellyfin.Plugin.KasuMeta.Search;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -63,6 +65,8 @@ public class KasuMetaDatabaseTests
                 INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status) VALUES ('{new string('a', 32)}', '{emptyIds}', 1, 'ok');
                 INSERT INTO localized_image (item_id, locale, image_type, url, source, locked, updated_at)
                   VALUES ('{new string('a', 32)}', 'es-MX', 'Primary', 'https://x/p.jpg', 'manual', 1, 1);
+                INSERT INTO localized_field (item_id, locale, field, value, source, locked, updated_at)
+                  VALUES ('{new string('a', 32)}', 'es-MX', 'name', 'La cabaña del terror', 'tmdb', 0, 1);
                 """;
             await command.ExecuteNonQueryAsync();
         }
@@ -74,6 +78,11 @@ public class KasuMetaDatabaseTests
         Assert.Equal(1, (await db.Store.GetFetchStateAsync(id, CancellationToken.None))!.FetchVersion);
         var image = Assert.Single(await db.Store.GetImagesAsync([id], null, CancellationToken.None));
         Assert.Equal(("https://x/p.jpg", true, (int?)null), (image.Url, image.Locked, image.Width));
+
+        // A name stored before search existed is searchable after the upgrade.
+        var hit = Assert.Single(await db.Store.SearchNamesAsync(
+            SearchQuery.Parse("cabana"), Enum.GetValues<ItemKind>().ToHashSet(), 10, CancellationToken.None));
+        Assert.Equal((id, "es-MX", (ItemKind?)null), (hit.ItemId, hit.Locale, hit.Kind));
     }
 
     [Fact]

@@ -22,6 +22,7 @@ public class ContractTests
     [InlineData("info.json", typeof(KasuMetaInfo))]
     [InlineData("batch.json", typeof(BatchResponse))]
     [InlineData("item.json", typeof(ItemOverlay))]
+    [InlineData("search.json", typeof(SearchResponse))]
     public void Fixtures_round_trip_through_the_DTOs_unchanged(string fixture, Type type)
     {
         var json = Read(fixture);
@@ -76,6 +77,8 @@ public class ContractTests
     [InlineData("ItemOverlay", typeof(ItemOverlay))]
     [InlineData("LocalizedValue", typeof(LocalizedValue))]
     [InlineData("LocalizedImageValue", typeof(LocalizedImageValue))]
+    [InlineData("SearchResponse", typeof(SearchResponse))]
+    [InlineData("SearchResult", typeof(SearchResult))]
     public void The_openapi_schema_lists_exactly_the_DTO_properties(string schema, Type type)
     {
         var properties = Spec()["components"]["schemas"][schema]["properties"];
@@ -95,7 +98,7 @@ public class ContractTests
             .Select(kv => ((YamlScalarNode)kv.Value).Value!)
             .ToList();
 
-        Assert.Equal(3, refs.Count);
+        Assert.Equal(4, refs.Count);
         Assert.All(refs, r => Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "Contract", Path.GetFileName(r))), r));
     }
 

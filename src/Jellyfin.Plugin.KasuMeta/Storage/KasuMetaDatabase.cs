@@ -38,8 +38,17 @@ public sealed class KasuMetaDatabase : IDisposable
     /// <summary>Gets the path of the database file.</summary>
     public string DatabasePath { get; }
 
-    /// <summary>Gets a value indicating whether the server's SQLite has FTS5 (needed for Phase 3 search).</summary>
+    /// <summary>Gets a value indicating whether the server's SQLite has FTS5.</summary>
     public bool SupportsFts5 { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the full-text index over localized names is built. When
+    /// false (no FTS5), search still works by substring matching, without accent folding.
+    /// </summary>
+    public bool SearchIndexReady { get; private set; }
+
+    /// <summary>Gets or sets a stand-in for the FTS5 probe, so tests can run the no-FTS5 path.</summary>
+    internal bool? Fts5Override { get; set; }
 
     /// <summary>Gets the schema version after initialization (0 before it).</summary>
     public int SchemaVersion { get; private set; }
@@ -81,7 +90,11 @@ public sealed class KasuMetaDatabase : IDisposable
                 SchemaVersion = await Migrations
                     .MigrateAsync(connection, _time.GetUtcNow(), _logger, cancellationToken)
                     .ConfigureAwait(false);
-                SupportsFts5 = await ProbeFts5Async(connection, cancellationToken).ConfigureAwait(false);
+                SupportsFts5 = Fts5Override
+                    ?? await ProbeFts5Async(connection, cancellationToken).ConfigureAwait(false);
+                SearchIndexReady = await SearchIndex
+                    .EnsureAsync(connection, SupportsFts5, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             _initialized = true;

@@ -64,6 +64,7 @@ public sealed class MetadataFetcherTests : IDisposable
         Assert.DoesNotContain(rows, r => r is { Locale: "ja-JP", Field: MetadataFields.Overview });
         var state = await _db.Store.GetFetchStateAsync(Antitrust, None);
         Assert.Equal((FetchStatus.Ok, "9989", MetadataFetcher.FetchVersion), (state!.Status, state.ProviderIds[ProviderNames.Tmdb], state.FetchVersion));
+        Assert.Equal(ItemKind.Movie, state.Kind);
     }
 
     [Fact]
@@ -131,7 +132,8 @@ public sealed class MetadataFetcherTests : IDisposable
         Assert.Equal(FetchResult.Skipped, await _fetcher.FetchAsync(Antitrust, force: false, None));
         Assert.Equal(FetchResult.Unchanged, await _fetcher.FetchAsync(Antitrust, force: false, None));
         Assert.Empty(_tmdb.Calls);
-        Assert.Equal(FetchStatus.Skipped, (await _db.Store.GetFetchStateAsync(Antitrust, None))!.Status);
+        var skipped = await _db.Store.GetFetchStateAsync(Antitrust, None);
+        Assert.Equal((FetchStatus.Skipped, ItemKind.Movie), (skipped!.Status, skipped.Kind)); // the kind is known even with nothing to fetch
 
         _library.Add(FakeLibrary.Movie(Antitrust, "9989")); // metadata refresh found the id
         Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Antitrust, force: false, None));
@@ -193,6 +195,7 @@ public sealed class MetadataFetcherTests : IDisposable
         Assert.Equal(["tv/80834/season/1/episode/3"], _tmdb.Calls);
         var state = await _db.Store.GetFetchStateAsync(episode, None);
         Assert.Equal(("80834", "1", "3"), (state!.ProviderIds["Series.Tmdb"], state.ProviderIds["Season"], state.ProviderIds["Episode"]));
+        Assert.Equal(ItemKind.Episode, state.Kind);
     }
 
     [Fact]

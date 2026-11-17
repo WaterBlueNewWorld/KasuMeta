@@ -77,6 +77,34 @@ body="$(batch "{\"ItemIds\":[\"$cabin\"],\"Locale\":\"es-MX\",\"Images\":[]}")"
 [[ "$(status -X POST -H "$U" -H 'Content-Type: application/json' --data "{\"ItemIds\":[\"$cabin\"],\"Locale\":\"es-MX\",\"Images\":[\"Poster\"]}" "$base/KasuMeta/Items/Batch")" == 400 ]] \
   && pass "unknown image type -> 400" || fail "400 image type"
 
+echo "Search"
+# search Q LOCALE [EXTRA]: the query is percent-encoded as UTF-8 by Python, because curl on
+# Windows would send non-ASCII arguments in the ANSI code page.
+search() {
+  local q
+  q="$(python -I -c "import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))" "$1")"
+  curl -sS -H "$U" "$base/KasuMeta/Search?q=$q&locale=$2${3:+&$3}"
+}
+[[ "$(curl -sS -H "$U" "$base/KasuMeta/Info" | json "'search' in d['Features']")" == "True" ]] && pass "Info lists the search feature" || fail "features"
+body="$(search "cabana del terr" es-MX)"
+[[ "$(json "(d['Results'][0]['ItemId'], d['Results'][0]['MatchedName']) == ('$cabin', 'La cabaña del terror')" <<<"$body")" == "True" ]] \
+  && pass "accents and case ignored, last word a prefix (cabana del terr)" || fail "search cabana: $body"
+body="$(search "キャビン" es-MX)"
+[[ "$(json "(d['Results'][0]['ItemId'], d['Results'][0]['MatchedLocale']) == ('$cabin', 'ja-JP')" <<<"$body")" == "True" ]] \
+  && pass "found from a Spanish session by its Japanese title" || fail "search ja: $body"
+body="$(search "まどか" ja-JP)"
+[[ "$(json "d['Results'][0]['ItemId']" <<<"$body")" == "$magia" ]] && pass "Japanese text found in the middle of a title" || fail "search mid-title: $body"
+body="$(search "chicas del esc" es-MX)"
+[[ "$(json "d['Results'][0]['Type']" <<<"$body")" == "Episode" ]] && pass "episodes are searchable" || fail "search episode: $body"
+body="$(search "revue starlight" en-US)"
+[[ "$(json "d['Results'][0]['Type']" <<<"$body")" == "Series" ]] && pass "a series ranks above the episode named after it" || fail "kind rank: $body"
+body="$(search "revue" en-US "types=Series")"
+[[ "$(json "sorted({r['Type'] for r in d['Results']})" <<<"$body")" == "['Series']" ]] && pass "types filter" || fail "types: $body"
+body="$(search "the" en-US "limit=1")"
+[[ "$(json "len(d['Results'])" <<<"$body")" == 1 ]] && pass "limit" || fail "limit: $body"
+[[ "$(status -H "$U" "$base/KasuMeta/Search?q=%21%21&locale=es-MX")" == 400 ]] && pass "nothing searchable -> 400" || fail "400 search"
+[[ "$(status "$base/KasuMeta/Search?q=cabin&locale=es-MX")" == 401 ]] && pass "search without a token -> 401" || fail "401 search"
+
 echo "Errors"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=pt-BR")" == 404 ]] && pass "no translation -> 404" || fail "404"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=bad!")" == 400 ]] && pass "bad locale -> 400" || fail "400 locale"
@@ -99,6 +127,8 @@ body="$(batch "{\"ItemIds\":[\"$antitrust\",\"$magia\"],\"Locale\":\"es-MX\"}")"
 [[ "$(json "list(d['Items']) == ['$antitrust'] and d['Missing'] == ['$magia']" <<<"$body")" == "True" ]] \
   && pass "a series outside the user's libraries is Missing" || fail "visibility: $body"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$magia?locale=es-MX")" == 404 ]] && pass "and 404 on its own" || fail "hidden 404"
+[[ "$(search "magia record" es-MX | json "len(d['Results'])")" == 0 ]] && pass "and not found by search" || fail "search leaks a hidden title"
+[[ "$(search "cabana" es-MX | json "d['Results'][0]['ItemId']")" == "$cabin" ]] && pass "while visible titles still are" || fail "search visible"
 set_folders True "[]"
 trap - EXIT
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$magia?locale=es-MX")" == 200 ]] && pass "visible again after restoring access" || fail "restore"

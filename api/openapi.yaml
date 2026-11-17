@@ -25,6 +25,14 @@ info:
       smaller copies at the same path with `/original/` replaced by `/w342/`, `/w500/` or `/w780/`
       (logos: `/w300/`, `/w500/`), with `Access-Control-Allow-Origin: *`. Textless art isn't
       localized, so it's left to Jellyfin's own images.
+    - **Search:** over localized names in every stored locale, so a title is found by its name
+      in any enabled language. Case and accents are ignored ("cabana" finds "La cabaña del
+      terror"), every word must match, the last word matches as a prefix (type-ahead), and text
+      in scripts written without spaces (Chinese, Japanese, Korean, Thai) matches anywhere in a
+      name. On a server whose SQLite lacks FTS5 every word matches as a plain substring
+      instead, without accent folding.
+    - **Growing without breaking:** new routes and optional properties are added under the same
+      `ApiVersion`; `Info.Features` says what a given build has.
     - **Visibility:** items the caller can't see are reported exactly like items with no data
       (`Missing` / 404), so the API never reveals hidden titles.
     - **Examples:** `api/fixtures/*.json` were captured from a live Jellyfin 12.1 server and are
@@ -40,7 +48,8 @@ paths:
       summary: Capability check
       description: >
         Called after sign-in. 200 means the plugin is installed; 404 means it isn't, and the client
-        keeps to stock Jellyfin fields. A client refuses an ApiVersion it doesn't know.
+        keeps to stock Jellyfin fields. A client refuses an ApiVersion it doesn't know, and checks
+        Features before calling a route an older build may lack.
       responses:
         "200":
           description: Installed.
@@ -100,6 +109,44 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404":
           description: Nothing to serve. The item isn't fetched yet, has no translation in any fallback locale, is unknown, or isn't visible to the caller.
+  /KasuMeta/Search:
+    get:
+      summary: Find items by their localized names
+      description: >
+        Returns ids, not items: the client fetches them from Jellyfin (`/Items?ids=`) and merges
+        them into its own search results. One result per item; when an item's name matches in
+        several locales, the caller's locale is the one reported. Order: exact name matches, then
+        names starting with the query, then the rest; the caller's locale before its language's
+        other regions before other languages; then relevance.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: What the user typed. Needs at least one letter or digit; at most 200 characters and 12 words are used.
+          schema: { type: string, example: cabana del terr }
+        - name: locale
+          in: query
+          required: true
+          schema: { type: string, example: es-MX }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: types
+          in: query
+          description: Comma-separated item kinds, any casing. Default is Movie,Series,Episode.
+          schema: { type: string, example: "Movie,Series" }
+      responses:
+        "200":
+          description: The matches the caller may see, best first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResponse" }
+              example: { $ref: "fixtures/search.json" }
+        "400":
+          description: No searchable text in q, bad locale, limit out of range, or an unknown type. The body is a message string.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: A request with neither a user nor an API key.
 components:
   securitySchemes:
     MediaBrowser:
@@ -113,7 +160,7 @@ components:
   schemas:
     KasuMetaInfo:
       type: object
-      required: [Name, Version, ApiVersion, EnabledLocales, FallbackToBaseLanguage]
+      required: [Name, Version, ApiVersion, EnabledLocales, FallbackToBaseLanguage, Features]
       properties:
         Name: { type: string, example: KasuMeta }
         Version: { type: string, example: 0.0.1.0 }
@@ -123,6 +170,12 @@ components:
           items: { type: string }
           example: [en-US, es-ES, es-MX, ja-JP, zh-CN]
         FallbackToBaseLanguage: { type: boolean }
+        Features:
+          type: array
+          description: What this build serves. Unknown values are to be ignored.
+          items:
+            type: string
+            enum: [text, images, search]
     BatchRequest:
       type: object
       required: [ItemIds, Locale]
@@ -212,3 +265,32 @@ components:
           description: The stored locale served; differs from the request after a fallback.
         Locked:
           type: boolean
+
+    SearchResponse:
+      type: object
+      required: [Query, Locale, Results]
+      properties:
+        Query:
+          type: string
+          description: The query as the server read it (trimmed).
+        Locale:
+          type: string
+          description: The requested locale, normalized.
+        Results:
+          type: array
+          items: { $ref: "#/components/schemas/SearchResult" }
+    SearchResult:
+      type: object
+      required: [ItemId, Type, MatchedName, MatchedLocale]
+      properties:
+        ItemId:
+          type: string
+          description: Dashless Jellyfin item id.
+        Type:
+          type: string
+          enum: [Movie, Series, Season, Episode]
+        MatchedName:
+          type: string
+          description: The localized name that matched, in the caller's locale when the item matched there.
+        MatchedLocale:
+          type: string
