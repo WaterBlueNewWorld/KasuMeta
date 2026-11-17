@@ -15,6 +15,8 @@
     <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)" />
     <!-- Brings the e_sqlite3 bundle the server would otherwise provide (and inits it). -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!-- Parses api/openapi.yaml so the spec can't drift from the DTOs (ContractTests). -->
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +28,7 @@
     <None Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- The API contract's live-captured examples, shared with the client app. -->
     <None Include="..\..\api\fixtures\*.json" Link="Contract\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\api\openapi.yaml" Link="Contract\openapi.yaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

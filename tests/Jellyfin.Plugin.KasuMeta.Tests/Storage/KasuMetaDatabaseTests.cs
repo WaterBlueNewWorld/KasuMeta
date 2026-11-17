@@ -47,6 +47,36 @@ public class KasuMetaDatabaseTests
     }
 
     [Fact]
+    public async Task A_phase_1_database_upgrades_in_place()
+    {
+        using var db = new TestDatabase();
+        Directory.CreateDirectory(Path.GetDirectoryName(db.DbPath)!);
+        await using (var v1 = new SqliteConnection($"Data Source={db.DbPath};Pooling=False"))
+        {
+            await v1.OpenAsync();
+            await using var command = v1.CreateCommand();
+            const string emptyIds = "{}";
+            command.CommandText = $"""
+                CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+                {Migrations.All[0].Sql}
+                INSERT INTO schema_version VALUES (1, 0);
+                INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status) VALUES ('{new string('a', 32)}', '{emptyIds}', 1, 'ok');
+                INSERT INTO localized_image (item_id, locale, image_type, url, source, locked, updated_at)
+                  VALUES ('{new string('a', 32)}', 'es-MX', 'Primary', 'https://x/p.jpg', 'manual', 1, 1);
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await db.Database.EnsureInitializedAsync(CancellationToken.None);
+
+        var id = Guid.Parse(new string('a', 32));
+        Assert.Equal(Migrations.Latest, db.Database.SchemaVersion);
+        Assert.Equal(1, (await db.Store.GetFetchStateAsync(id, CancellationToken.None))!.FetchVersion);
+        var image = Assert.Single(await db.Store.GetImagesAsync([id], null, CancellationToken.None));
+        Assert.Equal(("https://x/p.jpg", true, (int?)null), (image.Url, image.Locked, image.Width));
+    }
+
+    [Fact]
     public async Task Concurrent_first_use_initializes_once()
     {
         using var db = new TestDatabase();

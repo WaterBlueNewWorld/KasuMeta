@@ -64,13 +64,17 @@ public sealed record LocalizedField(
 /// <param name="Url">Absolute URL of the image.</param>
 /// <param name="Source">One of <see cref="MetadataSources"/>.</param>
 /// <param name="Locked">Same rule as <see cref="LocalizedField.Locked"/>.</param>
+/// <param name="Width">Pixel width of the image at <paramref name="Url"/>, if known.</param>
+/// <param name="Height">Pixel height, if known.</param>
 public sealed record LocalizedImage(
     Guid ItemId,
     string Locale,
     string ImageType,
     string Url,
     string Source,
-    bool Locked = false)
+    bool Locked = false,
+    int? Width = null,
+    int? Height = null)
 {
     /// <summary>Gets when the row was last written. Set by the store; ignored on writes.</summary>
     public DateTimeOffset UpdatedAt { get; init; }
@@ -103,9 +107,14 @@ public enum FetchStatus
 /// <param name="LastFetch">When the last fetch finished, or null if never.</param>
 /// <param name="Status">The outcome of that fetch.</param>
 /// <param name="LastError">The error message when <paramref name="Status"/> is Error.</param>
+/// <param name="FetchVersion">
+/// Which fetch logic produced this state (1 = text only, 2 = text and images). An item below the
+/// current version is fetched again, so new data kinds reach items fetched by older builds.
+/// </param>
 public sealed record FetchState(
     Guid ItemId,
     IReadOnlyDictionary<string, string> ProviderIds,
     DateTimeOffset? LastFetch,
     FetchStatus Status,
-    string? LastError = null);
+    string? LastError = null,
+    int FetchVersion = 1);

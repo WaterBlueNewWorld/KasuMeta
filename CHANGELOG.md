@@ -5,6 +5,25 @@ All notable changes to KasuMeta. Format: [Keep a Changelog](https://keepachangel
 ## [Unreleased]
 
 ### Added
+- Phase 2, localized images:
+  - Posters (`Primary`), logos and backdrops per locale from TMDB, in the same single request
+    per item (`append_to_response=translations,images`, `include_image_language` = the enabled
+    languages). Seasons now use their details call to get their posters too.
+  - TMDB images carry a region, so Mexican and Spanish posters differ, and Simplified and
+    Traditional Chinese art stay apart. Choice: raster before SVG (Flutter can't draw SVG),
+    then votes, then width.
+  - Stored with their size (schema 2); served as `Images` per item, each type resolving its
+    locale on its own; `Images` filter on the batch request.
+  - Fetch version in the fetch state: items fetched by an older build (text only) are
+    re-queued by the backfill, so an update reaches the whole library.
+- Contract tests parse `api/openapi.yaml` and check each schema lists exactly its DTO's
+  properties.
+
+### Changed
+- Batch `Fields`: an empty list now means "no fields" (images only), matching `Images`; absent
+  still means all.
+
+### Added (Phase 1)
 - Phase 1 read path, complete:
   - Fetch queue and background worker (de-duplicating, 4 at a time); a fetch keeps the locales
     in the enabled locales' language groups and replaces the provider's unlocked rows, so a

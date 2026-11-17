@@ -24,6 +24,16 @@ public sealed class MetadataFetcherTests : IDisposable
         new("zh-TW", "奪命連線", "…", null),
     ];
 
+    private static readonly IReadOnlyList<TmdbImage> AntitrustImages =
+    [
+        new("es-ES", "Primary", "https://image.tmdb.org/t/p/original/es.jpg", 1920, 2560),
+        new("es-ES", "Logo", "https://image.tmdb.org/t/p/original/es-logo.png", 558, 92),
+        new("en-US", "Primary", "https://image.tmdb.org/t/p/original/en.jpg", 1000, 1500),
+        new("zh-TW", "Primary", "https://image.tmdb.org/t/p/original/tw.jpg", 1000, 1500),
+    ];
+
+    private static readonly TmdbTitle Antitrust_ = new(AntitrustTranslations, AntitrustImages);
+
     private readonly TestDatabase _db = new();
     private readonly FakeLibrary _library = new();
     private readonly FakeTmdb _tmdb = new();
@@ -33,7 +43,7 @@ public sealed class MetadataFetcherTests : IDisposable
     public MetadataFetcherTests()
     {
         _fetcher = new MetadataFetcher(_library, _db.Store, _tmdb, _config, _db.Time);
-        _tmdb.Answer = _ => AntitrustTranslations;
+        _tmdb.Answer = _ => Antitrust_;
     }
 
     public void Dispose() => _db.Dispose();
@@ -53,7 +63,31 @@ public sealed class MetadataFetcherTests : IDisposable
         Assert.Contains(rows, r => r is { Locale: "en-US", Field: MetadataFields.Tagline, Value: "Truth can be dangerous" });
         Assert.DoesNotContain(rows, r => r is { Locale: "ja-JP", Field: MetadataFields.Overview });
         var state = await _db.Store.GetFetchStateAsync(Antitrust, None);
-        Assert.Equal((FetchStatus.Ok, "9989"), (state!.Status, state.ProviderIds[ProviderNames.Tmdb]));
+        Assert.Equal((FetchStatus.Ok, "9989", MetadataFetcher.FetchVersion), (state!.Status, state.ProviderIds[ProviderNames.Tmdb], state.FetchVersion));
+    }
+
+    [Fact]
+    public async Task Images_are_stored_with_their_size_for_the_enabled_language_groups()
+    {
+        _library.Add(FakeLibrary.Movie(Antitrust, "9989"));
+
+        await _fetcher.FetchAsync(Antitrust, force: false, None);
+
+        var images = await _db.Store.GetImagesAsync([Antitrust], null, None);
+        Assert.Equal(["en-US/Primary", "es-ES/Logo", "es-ES/Primary"], images.Select(i => $"{i.Locale}/{i.ImageType}").Order(StringComparer.Ordinal));
+        var poster = Assert.Single(images, i => i is { Locale: "es-ES", ImageType: "Primary" });
+        Assert.Equal((1920, 2560, MetadataSources.Tmdb), (poster.Width!.Value, poster.Height!.Value, poster.Source));
+    }
+
+    [Fact]
+    public async Task A_state_from_an_older_fetch_version_is_fetched_again()
+    {
+        _library.Add(FakeLibrary.Movie(Antitrust, "9989"));
+        var snapshot = new Dictionary<string, string> { [ProviderNames.Tmdb] = "9989" };
+        await _db.Store.SetFetchStateAsync(new FetchState(Antitrust, snapshot, _db.Time.Now, FetchStatus.Ok, FetchVersion: 1), None);
+
+        Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Antitrust, force: false, None));
+        Assert.NotEmpty(await _db.Store.GetImagesAsync([Antitrust], null, None));
     }
 
     [Fact]
@@ -78,7 +112,7 @@ public sealed class MetadataFetcherTests : IDisposable
 
         // Identify picks another film: new TMDB id, which has only an English title.
         _library.Add(FakeLibrary.Movie(Antitrust, "1234"));
-        _tmdb.Answer = _ => [new TmdbTranslation("en-US", "Another Film", null, null)];
+        _tmdb.Answer = _ => new TmdbTitle([new TmdbTranslation("en-US", "Another Film", null, null)], []);
         var result = await _fetcher.FetchAsync(Antitrust, force: false, None);
 
         Assert.Equal(FetchResult.Fetched, result);
@@ -86,6 +120,7 @@ public sealed class MetadataFetcherTests : IDisposable
         Assert.DoesNotContain(rows, r => r.Value == "Amenaza Virtual"); // the old film's title is gone
         Assert.Contains(rows, r => r is { Locale: "en-US", Field: MetadataFields.Name, Value: "Another Film" });
         Assert.Contains(rows, r => r is { Value: "Curada a mano", Locked: true });
+        Assert.Empty(await _db.Store.GetImagesAsync([Antitrust], null, None)); // the old film's posters too
     }
 
     [Fact]
@@ -122,7 +157,7 @@ public sealed class MetadataFetcherTests : IDisposable
         var state = await _db.Store.GetFetchStateAsync(Antitrust, None);
         Assert.Equal((FetchStatus.Error, "TMDB API key is not set"), (state!.Status, state.LastError));
 
-        _tmdb.Answer = _ => AntitrustTranslations; // the admin added the key
+        _tmdb.Answer = _ => Antitrust_; // the admin added the key
         Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Antitrust, force: false, None));
     }
 

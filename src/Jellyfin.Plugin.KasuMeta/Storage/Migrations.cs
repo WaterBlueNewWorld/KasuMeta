@@ -46,7 +46,15 @@ internal static class Migrations
             CREATE INDEX ix_fetch_state_last_fetch ON fetch_state (last_fetch);
             """),
 
-        // Phase 3 adds the FTS5 table here as version 2.
+        // Phase 2: image sizes, and which fetch logic produced a state. Rows from Phase 1 are
+        // fetch version 1 (no images), so the backfill re-queues them once.
+        (2, """
+            ALTER TABLE localized_image ADD COLUMN width INTEGER;
+            ALTER TABLE localized_image ADD COLUMN height INTEGER;
+            ALTER TABLE fetch_state ADD COLUMN fetch_version INTEGER NOT NULL DEFAULT 1;
+            """),
+
+        // Phase 3 adds the FTS5 table here as version 3.
     ];
 
     /// <summary>Gets the newest schema version this build knows.</summary>

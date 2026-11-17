@@ -224,6 +224,44 @@ public class SqliteLocalizedMetadataStoreTests
     }
 
     [Fact]
+    public async Task Image_sizes_round_trip_and_provider_images_are_replaced()
+    {
+        using var db = new TestDatabase();
+        await db.Store.UpsertImagesAsync(
+            [
+                new(Spirited, "es-MX", LocalizedImageTypes.Primary, "https://x/old.jpg", MetadataSources.Tmdb, Width: 1000, Height: 1500),
+                new(Spirited, "ja-JP", LocalizedImageTypes.Logo, "https://x/old-logo.png", MetadataSources.Tmdb),
+                new(Spirited, "es-MX", LocalizedImageTypes.Logo, "https://x/manual.png", MetadataSources.Manual, Locked: true),
+            ],
+            None);
+
+        await db.Store.ReplaceProviderImagesAsync(
+            Spirited,
+            MetadataSources.Tmdb,
+            [new(Spirited, "es-MX", LocalizedImageTypes.Primary, "https://x/new.jpg", MetadataSources.Tmdb, Width: 2000, Height: 3000)],
+            None);
+
+        var images = await db.Store.GetImagesAsync([Spirited], null, None);
+        Assert.Equal(["https://x/manual.png", "https://x/new.jpg"], images.Select(i => i.Url).Order(StringComparer.Ordinal));
+        var poster = Assert.Single(images, i => i.ImageType == LocalizedImageTypes.Primary);
+        Assert.Equal((2000, 3000), (poster.Width!.Value, poster.Height!.Value));
+        Assert.Null(Assert.Single(images, i => i.Locked).Width);
+    }
+
+    [Fact]
+    public async Task Known_ids_can_require_a_fetch_version()
+    {
+        using var db = new TestDatabase();
+        var none = new Dictionary<string, string>();
+        await db.Store.SetFetchStateAsync(new(Spirited, none, db.Time.Now, FetchStatus.Ok, FetchVersion: 1), None);
+        await db.Store.SetFetchStateAsync(new(Other, none, db.Time.Now, FetchStatus.Ok, FetchVersion: 2), None);
+
+        Assert.Equal(2, (await db.Store.GetKnownItemIdsAsync([Spirited, Other], None)).Count);
+        Assert.Equal([Other], await db.Store.GetKnownItemIdsAsync([Spirited, Other], None, minFetchVersion: 2));
+        Assert.Equal(2, (await db.Store.GetFetchStateAsync(Other, None))!.FetchVersion);
+    }
+
+    [Fact]
     public async Task Known_ids_are_those_with_a_fetch_state()
     {
         using var db = new TestDatabase();

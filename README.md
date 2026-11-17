@@ -64,7 +64,7 @@ captured from a live server in [`api/fixtures`](api/fixtures).
 | Route | Use |
 |---|---|
 | `GET /KasuMeta/Info` | Capability check after sign-in (404 = plugin not installed) |
-| `POST /KasuMeta/Items/Batch` | Localized overlays for up to 200 items (one call per grid page) |
+| `POST /KasuMeta/Items/Batch` | Localized titles, overviews, taglines and images for up to 200 items (one call per grid page) |
 | `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's overlay (detail page) |
 
 ## Status
@@ -73,6 +73,7 @@ captured from a live server in [`api/fixtures`](api/fixtures).
   - Phase 0: `GET /KasuMeta/Info` and the configuration page work.
   - Phase 1, the read path: store, locale fallback, TMDB client, fetch queue and worker,
     library hooks, scheduled tasks, and the batch and item endpoints.
+  - Phase 2: localized posters, logos and backdrops per locale.
   - Verified live on Jellyfin 12.1.
-- **Next:** Phase 2, localized images (posters and logos per locale).
+- **Next:** Phase 3, search over localized titles.
 - **Not supported yet:** Jellyfin 10.11. It's kept as a future option.

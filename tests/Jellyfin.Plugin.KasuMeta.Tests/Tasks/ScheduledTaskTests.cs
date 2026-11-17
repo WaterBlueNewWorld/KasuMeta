@@ -25,13 +25,30 @@ public sealed class ScheduledTaskTests : IDisposable
     {
         var seen = _library.Add(FakeLibrary.Movie(Guid.NewGuid(), "1")).Id;
         var fresh = _library.Add(FakeLibrary.Movie(Guid.NewGuid(), "2")).Id;
-        await _db.Store.SetFetchStateAsync(new FetchState(seen, NoIds, _db.Time.Now, FetchStatus.Ok), None);
+        await _db.Store.SetFetchStateAsync(
+            new FetchState(seen, NoIds, _db.Time.Now, FetchStatus.Ok, FetchVersion: MetadataFetcher.FetchVersion), None);
         var task = new BackfillTask(_library, _db.Store, _queue, NullLogger<BackfillTask>.Instance);
 
         await task.ExecuteAsync(new Progress<double>(), None);
 
         Assert.Equal(1, _queue.Pending);
         Assert.Equal([(fresh, false)], await TakeAsync(1));
+    }
+
+    [Fact]
+    public async Task Backfill_requeues_items_fetched_by_an_older_version()
+    {
+        var old = _library.Add(FakeLibrary.Movie(Guid.NewGuid(), "1")).Id;
+        var current = _library.Add(FakeLibrary.Movie(Guid.NewGuid(), "2")).Id;
+        await _db.Store.SetFetchStateAsync(new FetchState(old, NoIds, _db.Time.Now, FetchStatus.Ok, FetchVersion: 1), None);
+        await _db.Store.SetFetchStateAsync(
+            new FetchState(current, NoIds, _db.Time.Now, FetchStatus.Ok, FetchVersion: MetadataFetcher.FetchVersion), None);
+        var task = new BackfillTask(_library, _db.Store, _queue, NullLogger<BackfillTask>.Instance);
+
+        await task.ExecuteAsync(new Progress<double>(), None);
+
+        Assert.Equal([(old, false)], await TakeAsync(1));
+        Assert.Equal(0, _queue.Pending);
     }
 
     [Fact]

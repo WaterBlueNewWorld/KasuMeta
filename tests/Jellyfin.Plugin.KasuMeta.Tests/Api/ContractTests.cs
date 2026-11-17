@@ -7,6 +7,7 @@ using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Support;
+using YamlDotNet.RepresentationModel;
 
 namespace Jellyfin.Plugin.KasuMeta.Tests.Api;
 
@@ -45,10 +46,16 @@ public class ContractTests
                 new(id, "es-MX", MetadataFields.Tagline, "La verdad puede ser peligrosa…", MetadataSources.Tmdb),
             ],
             CancellationToken.None);
+        await db.Store.UpsertImagesAsync(
+            [
+                new(id, "es-ES", LocalizedImageTypes.Primary, "https://image.tmdb.org/t/p/original/p.jpg", MetadataSources.Tmdb, Width: 1920, Height: 2560),
+                new(id, "es-ES", LocalizedImageTypes.Logo, "https://image.tmdb.org/t/p/original/l.png", MetadataSources.Tmdb, Width: 558, Height: 92),
+            ],
+            CancellationToken.None);
         var service = new OverlayService(db.Store, new FakeConfig(new PluginConfiguration { EnabledLocales = ["es-MX"] }));
         var missing = Guid.Parse("0fb78f59088fbebaaa7ec9cfb39e3e6f");
 
-        var batch = await service.BuildAsync([id, missing], [id, missing], "es-MX", MetadataFields.All, CancellationToken.None);
+        var batch = await service.BuildAsync([id, missing], [id, missing], "es-MX", MetadataFields.All, LocalizedImageTypes.All, CancellationToken.None);
         var produced = JsonNode.Parse(JsonSerializer.Serialize(batch, JsonDefaults.Options))!;
         var fixture = JsonNode.Parse(Read("batch.json"))!;
 
@@ -57,7 +64,39 @@ public class ContractTests
         var fixtureItem = fixture["Items"]![id.ToString("N")]!;
         Assert.Equal(Keys(fixtureItem), Keys(producedItem));
         Assert.Equal(Keys(fixtureItem["Name"]!), Keys(producedItem["Name"]!));
+        Assert.Equal(Keys(fixtureItem["Images"]!), Keys(producedItem["Images"]!));
+        Assert.Equal(Keys(fixtureItem["Images"]!["Primary"]!), Keys(producedItem["Images"]!["Primary"]!));
         Assert.Equal(fixture["Missing"]!.ToJsonString(), produced["Missing"]!.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData("KasuMetaInfo", typeof(KasuMetaInfo))]
+    [InlineData("BatchRequest", typeof(BatchRequest))]
+    [InlineData("BatchResponse", typeof(BatchResponse))]
+    [InlineData("ItemOverlay", typeof(ItemOverlay))]
+    [InlineData("LocalizedValue", typeof(LocalizedValue))]
+    [InlineData("LocalizedImageValue", typeof(LocalizedImageValue))]
+    public void The_openapi_schema_lists_exactly_the_DTO_properties(string schema, Type type)
+    {
+        var properties = Spec()["components"]["schemas"][schema]["properties"];
+
+        Assert.Equal(
+            type.GetProperties().Select(p => p.Name).Order(StringComparer.Ordinal),
+            ((YamlMappingNode)properties).Children.Keys.Select(k => ((YamlScalarNode)k).Value!).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void The_openapi_examples_point_at_existing_fixtures()
+    {
+        var refs = Descendants(Spec())
+            .OfType<YamlMappingNode>()
+            .SelectMany(m => m.Children)
+            .Where(kv => ((YamlScalarNode)kv.Key).Value == "$ref" && ((YamlScalarNode)kv.Value).Value!.StartsWith("fixtures/", StringComparison.Ordinal))
+            .Select(kv => ((YamlScalarNode)kv.Value).Value!)
+            .ToList();
+
+        Assert.Equal(3, refs.Count);
+        Assert.All(refs, r => Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "Contract", Path.GetFileName(r))), r));
     }
 
     [Fact]
@@ -73,6 +112,23 @@ public class ContractTests
 
     private static string Read(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Contract", name));
+
+    /// <summary>Parses api/openapi.yaml; a YAML error fails every test that uses it.</summary>
+    private static YamlNode Spec()
+    {
+        var stream = new YamlStream();
+        using var reader = new StringReader(Read("openapi.yaml"));
+        stream.Load(reader);
+        return stream.Documents[0].RootNode;
+    }
+
+    private static IEnumerable<YamlNode> Descendants(YamlNode node) =>
+        node switch
+        {
+            YamlMappingNode m => m.Children.Values.SelectMany(Descendants).Prepend(node),
+            YamlSequenceNode s => s.Children.SelectMany(Descendants).Prepend(node),
+            _ => [node],
+        };
 
     private static string[] Keys(JsonNode node) => [.. node.AsObject().Select(p => p.Key).Order(StringComparer.Ordinal)];
 }

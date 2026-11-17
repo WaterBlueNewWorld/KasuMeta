@@ -21,11 +21,12 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         """;
 
     private const string UpsertImageSql = """
-        INSERT INTO localized_image (item_id, locale, image_type, url, source, locked, updated_at)
-        VALUES ($item, $locale, $key, $value, $source, $locked, $now)
+        INSERT INTO localized_image (item_id, locale, image_type, url, source, locked, updated_at, width, height)
+        VALUES ($item, $locale, $key, $value, $source, $locked, $now, $width, $height)
         ON CONFLICT (item_id, locale, image_type) DO UPDATE SET
           url = excluded.url, source = excluded.source,
-          locked = excluded.locked, updated_at = excluded.updated_at
+          locked = excluded.locked, updated_at = excluded.updated_at,
+          width = excluded.width, height = excluded.height
         WHERE localized_image.locked = 0 OR excluded.locked = 1;
         """;
 
@@ -50,7 +51,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
 
         return UpsertAsync(
             UpsertFieldSql,
-            fields.Select(f => (f.ItemId, f.Locale, f.Field, f.Value, f.Source, f.Locked)),
+            fields.Select(f => (f.ItemId, f.Locale, f.Field, f.Value, f.Source, f.Locked, (int?)null, (int?)null)),
             cancellationToken);
     }
 
@@ -76,9 +77,9 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
 
         return UpsertAsync(
             UpsertFieldSql,
-            fields.Select(f => (f.ItemId, f.Locale, f.Field, f.Value, f.Source, f.Locked)),
+            fields.Select(f => (f.ItemId, f.Locale, f.Field, f.Value, f.Source, f.Locked, (int?)null, (int?)null)),
             cancellationToken,
-            replaceUnlocked: (itemId, source));
+            replaceUnlocked: ("localized_field", itemId, source));
     }
 
     /// <inheritdoc />
@@ -93,8 +94,35 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
 
         return UpsertAsync(
             UpsertImageSql,
-            images.Select(i => (i.ItemId, i.Locale, i.ImageType, i.Url, i.Source, i.Locked)),
+            images.Select(i => (i.ItemId, i.Locale, i.ImageType, i.Url, i.Source, i.Locked, i.Width, i.Height)),
             cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<int> ReplaceProviderImagesAsync(
+        Guid itemId,
+        string source,
+        IReadOnlyCollection<LocalizedImage> images,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(images);
+        ArgumentException.ThrowIfNullOrWhiteSpace(source);
+        foreach (var i in images)
+        {
+            if (i.ItemId != itemId || i.Source != source || i.Locked)
+            {
+                throw new ArgumentException("Every row must be an unlocked row of this item and source.", nameof(images));
+            }
+
+            RequireKnown(i.ImageType, LocalizedImageTypes.All, nameof(LocalizedImage.ImageType));
+            RequireLocale(i.Locale);
+        }
+
+        return UpsertAsync(
+            UpsertImageSql,
+            images.Select(i => (i.ItemId, i.Locale, i.ImageType, i.Url, i.Source, i.Locked, i.Width, i.Height)),
+            cancellationToken,
+            replaceUnlocked: ("localized_image", itemId, source));
     }
 
     /// <inheritdoc />
@@ -127,7 +155,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         CancellationToken cancellationToken)
     {
         return QueryByItemsAsync(
-            "SELECT item_id, locale, image_type, url, source, locked, updated_at FROM localized_image",
+            "SELECT item_id, locale, image_type, url, source, locked, updated_at, width, height FROM localized_image",
             itemIds,
             locales,
             r => new LocalizedImage(
@@ -136,7 +164,9 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 r.GetString(2),
                 r.GetString(3),
                 r.GetString(4),
-                r.GetInt64(5) != 0)
+                r.GetInt64(5) != 0,
+                r.IsDBNull(7) ? null : r.GetInt32(7),
+                r.IsDBNull(8) ? null : r.GetInt32(8))
             {
                 UpdatedAt = DateTimeOffset.FromUnixTimeSeconds(r.GetInt64(6)),
             },
@@ -152,17 +182,19 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         {
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status, last_error)
-                VALUES ($item, $ids, $last, $status, $error)
+                INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status, last_error, fetch_version)
+                VALUES ($item, $ids, $last, $status, $error, $version)
                 ON CONFLICT (item_id) DO UPDATE SET
                   provider_ids = excluded.provider_ids, last_fetch = excluded.last_fetch,
-                  status = excluded.status, last_error = excluded.last_error;
+                  status = excluded.status, last_error = excluded.last_error,
+                  fetch_version = excluded.fetch_version;
                 """;
             command.Parameters.AddWithValue("$item", FormatId(state.ItemId));
             command.Parameters.AddWithValue("$ids", SerializeProviderIds(state.ProviderIds));
             command.Parameters.AddWithValue("$last", (object?)state.LastFetch?.ToUnixTimeSeconds() ?? DBNull.Value);
             command.Parameters.AddWithValue("$status", FormatStatus(state.Status));
             command.Parameters.AddWithValue("$error", (object?)state.LastError ?? DBNull.Value);
+            command.Parameters.AddWithValue("$version", state.FetchVersion);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -175,7 +207,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         {
             await using var command = connection.CreateCommand();
             command.CommandText =
-                "SELECT provider_ids, last_fetch, status, last_error FROM fetch_state WHERE item_id = $item;";
+                "SELECT provider_ids, last_fetch, status, last_error, fetch_version FROM fetch_state WHERE item_id = $item;";
             command.Parameters.AddWithValue("$item", FormatId(itemId));
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -188,7 +220,8 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 DeserializeProviderIds(reader.GetString(0)),
                 reader.IsDBNull(1) ? null : DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(1)),
                 ParseStatus(reader.GetString(2)),
-                reader.IsDBNull(3) ? null : reader.GetString(3));
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetInt32(4));
         }
     }
 
@@ -227,7 +260,10 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlySet<Guid>> GetKnownItemIdsAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken)
+    public async Task<IReadOnlySet<Guid>> GetKnownItemIdsAsync(
+        IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken,
+        int minFetchVersion = 0)
     {
         ArgumentNullException.ThrowIfNull(itemIds);
         var known = new HashSet<Guid>();
@@ -242,9 +278,10 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
             foreach (var chunk in itemIds.Distinct().Chunk(ChunkSize))
             {
                 await using var command = connection.CreateCommand();
-                var sql = new StringBuilder("SELECT item_id FROM fetch_state WHERE item_id IN (");
+                var sql = new StringBuilder("SELECT item_id FROM fetch_state WHERE fetch_version >= $min AND item_id IN (");
                 AppendParameters(command, sql, "$i", chunk.Select(FormatId));
                 command.CommandText = sql.Append(");").ToString();
+                command.Parameters.AddWithValue("$min", minFetchVersion);
                 await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
@@ -330,9 +367,9 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
 
     private async Task<int> UpsertAsync(
         string sql,
-        IEnumerable<(Guid ItemId, string Locale, string Key, string Value, string Source, bool Locked)> rows,
+        IEnumerable<(Guid ItemId, string Locale, string Key, string Value, string Source, bool Locked, int? Width, int? Height)> rows,
         CancellationToken cancellationToken,
-        (Guid ItemId, string Source)? replaceUnlocked = null)
+        (string Table, Guid ItemId, string Source)? replaceUnlocked = null)
     {
         var now = _time.GetUtcNow().ToUnixTimeSeconds();
         var written = 0;
@@ -348,8 +385,9 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 {
                     await using var delete = connection.CreateCommand();
                     delete.Transaction = transaction;
+                    // Table comes from this class's own literals, never from input.
                     delete.CommandText =
-                        "DELETE FROM localized_field WHERE item_id = $item AND source = $source AND locked = 0;";
+                        $"DELETE FROM {replace.Table} WHERE item_id = $item AND source = $source AND locked = 0;";
                     delete.Parameters.AddWithValue("$item", FormatId(replace.ItemId));
                     delete.Parameters.AddWithValue("$source", replace.Source);
                     await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -364,6 +402,9 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 var value = command.Parameters.Add("$value", SqliteType.Text);
                 var source = command.Parameters.Add("$source", SqliteType.Text);
                 var locked = command.Parameters.Add("$locked", SqliteType.Integer);
+                var hasSize = sql.Contains("$width", StringComparison.Ordinal);
+                var width = hasSize ? command.Parameters.Add("$width", SqliteType.Integer) : null;
+                var height = hasSize ? command.Parameters.Add("$height", SqliteType.Integer) : null;
                 command.Parameters.AddWithValue("$now", now);
 
                 foreach (var row in rows)
@@ -374,6 +415,11 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                     value.Value = row.Value;
                     source.Value = row.Source;
                     locked.Value = row.Locked ? 1 : 0;
+                    if (width is not null && height is not null)
+                    {
+                        width.Value = (object?)row.Width ?? DBNull.Value;
+                        height.Value = (object?)row.Height ?? DBNull.Value;
+                    }
                     written += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
 

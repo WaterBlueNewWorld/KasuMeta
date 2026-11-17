@@ -51,25 +51,21 @@ internal sealed class FakeTmdb : ITmdbClient
 {
     public List<string> Calls { get; } = [];
 
-    public Func<string, IReadOnlyList<TmdbTranslation>?> Answer { get; set; } = _ => [];
+    public Func<string, TmdbTitle?> Answer { get; set; } = _ => new TmdbTitle([], []);
 
-    public Task<IReadOnlyList<TmdbTranslation>?> GetMovieTranslationsAsync(int movieId, CancellationToken cancellationToken) =>
+    public Task<TmdbTitle?> GetMovieAsync(int movieId, CancellationToken cancellationToken) =>
         Call($"movie/{movieId}");
 
-    public Task<IReadOnlyList<TmdbTranslation>?> GetSeriesTranslationsAsync(int seriesId, CancellationToken cancellationToken) =>
+    public Task<TmdbTitle?> GetSeriesAsync(int seriesId, CancellationToken cancellationToken) =>
         Call($"tv/{seriesId}");
 
-    public Task<IReadOnlyList<TmdbTranslation>?> GetSeasonTranslationsAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken) =>
+    public Task<TmdbTitle?> GetSeasonAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken) =>
         Call($"tv/{seriesId}/season/{seasonNumber}");
 
-    public Task<IReadOnlyList<TmdbTranslation>?> GetEpisodeTranslationsAsync(
-        int seriesId,
-        int seasonNumber,
-        int episodeNumber,
-        CancellationToken cancellationToken) =>
+    public Task<TmdbTitle?> GetEpisodeAsync(int seriesId, int seasonNumber, int episodeNumber, CancellationToken cancellationToken) =>
         Call($"tv/{seriesId}/season/{seasonNumber}/episode/{episodeNumber}");
 
-    private Task<IReadOnlyList<TmdbTranslation>?> Call(string path)
+    private Task<TmdbTitle?> Call(string path)
     {
         Calls.Add(path);
         return Task.FromResult(Answer(path));

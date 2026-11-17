@@ -20,7 +20,25 @@
         "ResolvedLocale": "es-MX",
         "Locked": false
       },
-      "UpdatedAt": "2026-11-17T05:38:52+00:00"
+      "Images": {
+        "Logo": {
+          "Url": "https://image.tmdb.org/t/p/original/swGs2mjzvlUvYW37naumPyvUFR0.png",
+          "Width": 558,
+          "Height": 92,
+          "Source": "tmdb",
+          "ResolvedLocale": "es-ES",
+          "Locked": false
+        },
+        "Primary": {
+          "Url": "https://image.tmdb.org/t/p/original/zqGqZsOfY40ZnyzPPQq1jEVSTNf.jpg",
+          "Width": 1920,
+          "Height": 2560,
+          "Source": "tmdb",
+          "ResolvedLocale": "es-ES",
+          "Locked": false
+        }
+      },
+      "UpdatedAt": "2026-11-17T06:06:37+00:00"
     },
     "ff39210272a627bfdd396d3f7c57c2a8": {
       "Name": {
@@ -35,7 +53,7 @@
         "ResolvedLocale": "es-ES",
         "Locked": false
       },
-      "UpdatedAt": "2026-11-17T05:38:52+00:00"
+      "UpdatedAt": "2026-11-17T06:06:37+00:00"
     }
   },
   "Missing": [

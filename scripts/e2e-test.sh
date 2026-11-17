@@ -59,6 +59,24 @@ item="$(curl -sS -H "$U" "$base/KasuMeta/Items/$antitrust?locale=en-US")"
 [[ "$(json "d['Name']['Value']" <<<"$item")" == "Antitrust" ]] \
   && pass "en-US title filled from original_title" || fail "original title: $item"
 
+echo "Images"
+body="$(batch "{\"ItemIds\":[\"$antitrust\",\"$cabin\"],\"Locale\":\"es-MX\",\"Fields\":[],\"Images\":[\"Primary\",\"Logo\"]}")"
+cabin_poster="$(json "d['Items']['$cabin']['Images']['Primary']['Url']" <<<"$body")"
+[[ "$cabin_poster" == https://image.tmdb.org/t/p/original/* && "$(json "d['Items']['$cabin']['Images']['Primary']['ResolvedLocale']" <<<"$body")" == "es-MX" ]] \
+  && pass "Cabin in the Woods has a Mexican poster" || fail "Cabin poster: $body"
+[[ "$(json "d['Items']['$antitrust']['Images']['Primary']['ResolvedLocale']" <<<"$body")" == "es-ES" ]] \
+  && pass "Antitrust's poster falls back to es-ES (no Mexican poster)" || fail "Antitrust poster fallback"
+[[ "$(json "'Name' in d['Items']['$cabin']" <<<"$body")" == "False" ]] && pass "\"Fields\": [] leaves the text out" || fail "fields filter"
+[[ "$(json "d['Items']['$cabin']['Images']['Primary']['Width'] > 0" <<<"$body")" == "True" ]] && pass "image sizes served" || fail "sizes"
+[[ "$(json "all(not i['Url'].lower().endswith('.svg') for it in d['Items'].values() for i in it['Images'].values())" <<<"$body")" == "True" ]] \
+  && pass "no SVG served" || fail "svg"
+cors="$(curl -sI -H 'Origin: https://client.example' "${cabin_poster/\/original\//\/w342\/}" | tr -d '\r' | grep -i '^access-control-allow-origin:' || true)"
+[[ -n "$cors" ]] && pass "TMDB serves the poster (w342) with CORS for the web app" || fail "no CORS header on the image"
+body="$(batch "{\"ItemIds\":[\"$cabin\"],\"Locale\":\"es-MX\",\"Images\":[]}")"
+[[ "$(json "'Images' in d['Items']['$cabin']" <<<"$body")" == "False" ]] && pass "\"Images\": [] leaves images out" || fail "images filter"
+[[ "$(status -X POST -H "$U" -H 'Content-Type: application/json' --data "{\"ItemIds\":[\"$cabin\"],\"Locale\":\"es-MX\",\"Images\":[\"Poster\"]}" "$base/KasuMeta/Items/Batch")" == 400 ]] \
+  && pass "unknown image type -> 400" || fail "400 image type"
+
 echo "Errors"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=pt-BR")" == 404 ]] && pass "no translation -> 404" || fail "404"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=bad!")" == 400 ]] && pass "bad locale -> 400" || fail "400 locale"

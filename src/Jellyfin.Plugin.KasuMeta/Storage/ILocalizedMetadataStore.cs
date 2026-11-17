@@ -31,6 +31,14 @@ public interface ILocalizedMetadataStore
     /// <returns>How many rows were actually written.</returns>
     Task<int> UpsertImagesAsync(IReadOnlyCollection<LocalizedImage> images, CancellationToken cancellationToken);
 
+    /// <summary>Same as <see cref="ReplaceProviderFieldsAsync"/>, for images.</summary>
+    /// <returns>How many rows were written.</returns>
+    Task<int> ReplaceProviderImagesAsync(
+        Guid itemId,
+        string source,
+        IReadOnlyCollection<LocalizedImage> images,
+        CancellationToken cancellationToken);
+
     /// <summary>Gets the stored images of the given items, optionally only for some locales.</summary>
     Task<IReadOnlyList<LocalizedImage>> GetImagesAsync(
         IReadOnlyCollection<Guid> itemIds,
@@ -54,8 +62,14 @@ public interface ILocalizedMetadataStore
         CancellationToken cancellationToken,
         bool includeErrors = false);
 
-    /// <summary>Gets which of the given items have a fetch state (were ever queued).</summary>
-    Task<IReadOnlySet<Guid>> GetKnownItemIdsAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken);
+    /// <summary>
+    /// Gets which of the given items have a fetch state with at least
+    /// <paramref name="minFetchVersion"/> (0: any state at all).
+    /// </summary>
+    Task<IReadOnlySet<Guid>> GetKnownItemIdsAsync(
+        IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken,
+        int minFetchVersion = 0);
 
     /// <summary>Removes everything stored for an item (it left the library).</summary>
     Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken);

@@ -22,7 +22,7 @@ public class TmdbClientTests
     [Fact]
     public async Task Antitrust_gets_its_english_title_from_original_title()
     {
-        var translations = await RecordedAsync("movie-9989.json", c => c.GetMovieTranslationsAsync(9989, None));
+        var translations = await RecordedAsync("movie-9989.json", c => c.GetMovieAsync(9989, None));
 
         // TMDB's en-US entry has an empty title: English is the original language.
         Assert.Equal("Antitrust", Find(translations, "en-US").Title);
@@ -37,7 +37,7 @@ public class TmdbClientTests
     [Fact]
     public async Task Cabin_in_the_woods_differs_between_mexico_and_spain()
     {
-        var translations = await RecordedAsync("movie-22970.json", c => c.GetMovieTranslationsAsync(22970, None));
+        var translations = await RecordedAsync("movie-22970.json", c => c.GetMovieAsync(22970, None));
 
         Assert.Equal("La cabaña del terror", Find(translations, "es-MX").Title);
         Assert.Equal("La cabaña en el bosque", Find(translations, "es-ES").Title);
@@ -50,7 +50,7 @@ public class TmdbClientTests
     [Fact]
     public async Task Magia_record_gets_its_japanese_title_from_original_name()
     {
-        var translations = await RecordedAsync("tv-94523.json", c => c.GetSeriesTranslationsAsync(94523, None));
+        var translations = await RecordedAsync("tv-94523.json", c => c.GetSeriesAsync(94523, None));
 
         var ja = Find(translations, "ja-JP");
         Assert.Equal("マギアレコード 魔法少女まどか☆マギカ外伝", ja.Title); // empty in /translations
@@ -64,7 +64,7 @@ public class TmdbClientTests
     [Fact]
     public async Task A_translated_title_is_kept_over_the_original_name()
     {
-        var translations = await RecordedAsync("tv-80834.json", c => c.GetSeriesTranslationsAsync(80834, None));
+        var translations = await RecordedAsync("tv-80834.json", c => c.GetSeriesAsync(80834, None));
 
         // The ja-JP translation has its own spelling (with "・"); original_name has none.
         Assert.Equal("少女☆歌劇 レヴュー・スタァライト", Find(translations, "ja-JP").Title);
@@ -75,7 +75,7 @@ public class TmdbClientTests
     [Fact]
     public async Task Season_names_are_mostly_missing()
     {
-        var translations = await RecordedAsync("tv-80834-s1.translations.json", c => c.GetSeasonTranslationsAsync(80834, 1, None));
+        var translations = await RecordedAsync("tv-80834-s1.json", c => c.GetSeasonAsync(80834, 1, None));
 
         Assert.Equal("少女☆歌剧 Revue Starlight", Find(translations, "zh-CN").Title);
         Assert.DoesNotContain(translations, t => t.Locale is "es-MX" or "es-ES" or "en-US"); // all empty
@@ -86,7 +86,7 @@ public class TmdbClientTests
     {
         var translations = await RecordedAsync(
             "tv-80834-s1e1.translations.json",
-            c => c.GetEpisodeTranslationsAsync(80834, 1, 1, None));
+            c => c.GetEpisodeAsync(80834, 1, 1, None));
 
         Assert.Equal("Stage Girls", Find(translations, "en-US").Title);
         Assert.Equal("Chicas del escenario", Find(translations, "es-MX").Title);
@@ -100,7 +100,84 @@ public class TmdbClientTests
         var (client, handler, _) = Create(V4Token);
         handler.Respond(HttpStatusCode.NotFound, Fixture("movie-404.json"));
 
-        Assert.Null(await client.GetMovieTranslationsAsync(999999999, None));
+        Assert.Null(await client.GetMovieAsync(999999999, None));
+    }
+
+    // ---- Images (recorded) ----
+
+    [Fact]
+    public async Task Cabin_in_the_woods_has_regional_posters_and_logos()
+    {
+        var images = (await RecordedTitleAsync("movie-22970.json", c => c.GetMovieAsync(22970, None))).Images;
+
+        var mx = Image(images, "es-MX", "Primary");
+        Assert.Equal("https://image.tmdb.org/t/p/original/iLIe4sykUb0NxZpSKcHZmaqbgoy.jpg", mx.Url);
+        Assert.Equal((2000, 3000), (mx.Width, mx.Height));
+        Assert.NotEqual(mx.Url, Image(images, "es-ES", "Primary").Url);
+        Assert.NotNull(Image(images, "ja-JP", "Logo"));
+        // Chinese art comes per region, so Simplified (CN) and Traditional (TW, HK) stay apart.
+        Assert.Equal(["zh-CN", "zh-HK", "zh-TW"], images.Where(i => i.ImageType == "Primary" && i.Locale.StartsWith("zh", StringComparison.Ordinal)).Select(i => i.Locale));
+        Assert.All(images, i => Assert.StartsWith(TmdbClient.ImageBase + "/", i.Url, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_raster_logo_is_preferred_over_a_better_voted_svg()
+    {
+        // The recorded en-US logos of The Cabin in the Woods include an SVG.
+        var images = (await RecordedTitleAsync("movie-22970.json", c => c.GetMovieAsync(22970, None))).Images;
+
+        Assert.DoesNotContain(".svg", Image(images, "en-US", "Logo").Url, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_season_brings_its_posters_and_an_episode_none()
+    {
+        var season = await RecordedTitleAsync("tv-80834-s1.json", c => c.GetSeasonAsync(80834, 1, None));
+        var episode = await RecordedTitleAsync("tv-80834-s1e1.translations.json", c => c.GetEpisodeAsync(80834, 1, 1, None));
+
+        Assert.Equal(("ja-JP", "Primary"), (Assert.Single(season.Images).Locale, season.Images[0].ImageType));
+        Assert.Empty(episode.Images);
+    }
+
+    [Theory]
+    [InlineData(new[] { "en-US", "es-ES", "es-MX", "ja-JP", "zh-CN" }, "en,es,ja,zh")]
+    [InlineData(new[] { "yue-HK", "zh-TW" }, "cn,zh")]
+    [InlineData(new[] { "not a locale" }, "")]
+    public void Image_languages_come_from_the_enabled_locales(string[] enabled, string expected)
+    {
+        Assert.Equal(expected, TmdbClient.ImageLanguages(enabled));
+    }
+
+    [Fact]
+    public async Task With_no_usable_locale_images_are_not_requested()
+    {
+        var handler = new FakeHandler();
+        var config = new FakeConfig(new PluginConfiguration { TmdbApiKey = V4Token, EnabledLocales = [] });
+        var client = new TmdbClient(new FakeHttpClientFactory(handler), config, NullLogger<TmdbClient>.Instance);
+        handler.Respond(HttpStatusCode.OK, EmptyDetails);
+
+        await client.GetMovieAsync(1, None);
+
+        Assert.Equal("?append_to_response=translations", handler.Requests[0].RequestUri!.Query);
+    }
+
+    [Fact]
+    public void Image_choice_is_stable_and_skips_textless_and_broken_entries()
+    {
+        var response = new TmdbImagesResponse
+        {
+            Posters =
+            [
+                new TmdbImageEntry { Language = "es", Region = "MX", FilePath = "/b.jpg", Width = 1000, Height = 1500, VoteAverage = 5 },
+                new TmdbImageEntry { Language = "es", Region = "MX", FilePath = "/a.jpg", Width = 1000, Height = 1500, VoteAverage = 5 },
+                new TmdbImageEntry { Language = null, Region = null, FilePath = "/textless.jpg", Width = 2000, Height = 3000, VoteAverage = 9 },
+                new TmdbImageEntry { Language = "ja", Region = "JP", FilePath = "", Width = 1000, Height = 1500, VoteAverage = 9 },
+            ],
+        };
+
+        var images = TmdbClient.MapImages(response);
+
+        Assert.Equal("https://image.tmdb.org/t/p/original/a.jpg", Assert.Single(images).Url);
     }
 
     // ---- Mapping rules TMDB data doesn't happen to cover ----
@@ -142,19 +219,19 @@ public class TmdbClientTests
         var (client, handler, _) = Create(V4Token);
         handler.Respond(HttpStatusCode.OK, EmptyDetails);
         handler.Respond(HttpStatusCode.OK, EmptyDetails);
-        handler.Respond(HttpStatusCode.OK, EmptyTranslations);
+        handler.Respond(HttpStatusCode.OK, EmptyDetails);
         handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
-        await client.GetMovieTranslationsAsync(129, None);
-        await client.GetSeriesTranslationsAsync(80834, None);
-        await client.GetSeasonTranslationsAsync(80834, 1, None);
-        await client.GetEpisodeTranslationsAsync(80834, 1, 3, None);
+        await client.GetMovieAsync(129, None);
+        await client.GetSeriesAsync(80834, None);
+        await client.GetSeasonAsync(80834, 1, None);
+        await client.GetEpisodeAsync(80834, 1, 3, None);
 
         Assert.Equal(
             [
-                "/3/movie/129?append_to_response=translations",
-                "/3/tv/80834?append_to_response=translations",
-                "/3/tv/80834/season/1/translations",
+                "/3/movie/129?append_to_response=translations,images&include_image_language=en,es,ja,zh",
+                "/3/tv/80834?append_to_response=translations,images&include_image_language=en,es,ja,zh",
+                "/3/tv/80834/season/1?append_to_response=translations,images&include_image_language=en,es,ja,zh",
                 "/3/tv/80834/season/1/episode/3/translations",
             ],
             handler.Requests.Select(r => r.RequestUri!.PathAndQuery));
@@ -168,10 +245,10 @@ public class TmdbClientTests
         handler.Respond(HttpStatusCode.OK, EmptyDetails);
         handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
-        await client.GetMovieTranslationsAsync(1, None);
-        await client.GetEpisodeTranslationsAsync(1, 1, 1, None);
+        await client.GetMovieAsync(1, None);
+        await client.GetEpisodeAsync(1, 1, 1, None);
 
-        Assert.Equal($"?append_to_response=translations&api_key={V3Key}", handler.Requests[0].RequestUri!.Query);
+        Assert.Equal($"?append_to_response=translations,images&include_image_language=en,es,ja,zh&api_key={V3Key}", handler.Requests[0].RequestUri!.Query);
         Assert.Equal($"?api_key={V3Key}", handler.Requests[1].RequestUri!.Query);
         Assert.All(handler.Requests, r => Assert.Null(r.Headers.Authorization));
     }
@@ -182,7 +259,7 @@ public class TmdbClientTests
         var (client, handler, _) = Create(V4Token);
         handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
-        await client.GetEpisodeTranslationsAsync(1, 1, 1, None);
+        await client.GetEpisodeAsync(1, 1, 1, None);
 
         var request = Assert.Single(handler.Requests);
         Assert.Equal(string.Empty, request.RequestUri!.Query);
@@ -196,7 +273,7 @@ public class TmdbClientTests
     {
         var (client, handler, _) = Create(key);
 
-        await Assert.ThrowsAsync<ProviderNotConfiguredException>(() => client.GetMovieTranslationsAsync(1, None));
+        await Assert.ThrowsAsync<ProviderNotConfiguredException>(() => client.GetMovieAsync(1, None));
         Assert.Empty(handler.Requests);
     }
 
@@ -206,7 +283,7 @@ public class TmdbClientTests
         var (client, handler, delays) = Create(V3Key);
         handler.Respond(HttpStatusCode.Unauthorized, """{"status_code":7}""");
 
-        await Assert.ThrowsAsync<ProviderAuthenticationException>(() => client.GetMovieTranslationsAsync(1, None));
+        await Assert.ThrowsAsync<ProviderAuthenticationException>(() => client.GetMovieAsync(1, None));
         Assert.Single(handler.Requests);
         Assert.Empty(delays);
     }
@@ -218,9 +295,9 @@ public class TmdbClientTests
         handler.Respond(HttpStatusCode.TooManyRequests, "{}", retryAfterSeconds: 2);
         handler.Respond(HttpStatusCode.OK, Fixture("movie-9989.json"));
 
-        var translations = await client.GetMovieTranslationsAsync(9989, None);
+        var title = await client.GetMovieAsync(9989, None);
 
-        Assert.NotEmpty(translations!);
+        Assert.NotEmpty(title!.Translations);
         Assert.Equal([TimeSpan.FromSeconds(2)], delays);
     }
 
@@ -233,7 +310,7 @@ public class TmdbClientTests
             handler.Respond(HttpStatusCode.BadGateway, "{}");
         }
 
-        var error = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieTranslationsAsync(1, None));
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieAsync(1, None));
 
         Assert.Equal(HttpStatusCode.BadGateway, error.StatusCode);
         Assert.Equal(TmdbClient.MaxRetries + 1, handler.Requests.Count);
@@ -248,7 +325,7 @@ public class TmdbClientTests
         handler.Fail(new HttpRequestException("connection reset"));
         handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
-        Assert.NotNull(await client.GetEpisodeTranslationsAsync(1, 1, 1, None));
+        Assert.NotNull(await client.GetEpisodeAsync(1, 1, 1, None));
         Assert.Equal([TimeSpan.FromSeconds(1)], delays);
     }
 
@@ -258,7 +335,7 @@ public class TmdbClientTests
         var (client, handler, delays) = Create(V4Token);
         handler.Respond(HttpStatusCode.BadRequest, "{}");
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieTranslationsAsync(1, None));
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieAsync(1, None));
         Assert.Empty(delays);
     }
 
@@ -270,7 +347,7 @@ public class TmdbClientTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetMovieTranslationsAsync(1, cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetMovieAsync(1, cts.Token));
         Assert.Empty(delays);
     }
 
@@ -295,14 +372,20 @@ public class TmdbClientTests
 
     private static async Task<IReadOnlyList<TmdbTranslation>> RecordedAsync(
         string fixture,
-        Func<TmdbClient, Task<IReadOnlyList<TmdbTranslation>?>> call)
+        Func<TmdbClient, Task<TmdbTitle?>> call) =>
+        (await RecordedTitleAsync(fixture, call)).Translations;
+
+    private static async Task<TmdbTitle> RecordedTitleAsync(string fixture, Func<TmdbClient, Task<TmdbTitle?>> call)
     {
         var (client, handler, _) = Create(V4Token);
         handler.Respond(HttpStatusCode.OK, Fixture(fixture));
-        var translations = await call(client);
-        Assert.NotNull(translations);
-        return translations;
+        var title = await call(client);
+        Assert.NotNull(title);
+        return title;
     }
+
+    private static TmdbImage Image(IReadOnlyList<TmdbImage> images, string locale, string type) =>
+        Assert.Single(images, i => i.Locale == locale && i.ImageType == type);
 
     private static TmdbTranslation Find(IReadOnlyList<TmdbTranslation> translations, string locale) =>
         Assert.Single(translations, t => t.Locale == locale);

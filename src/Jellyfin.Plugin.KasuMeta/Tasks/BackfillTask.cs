@@ -35,7 +35,7 @@ public sealed class BackfillTask : IScheduledTask
 
     /// <inheritdoc />
     public string Description =>
-        "Queues every movie, series, season and episode KasuMeta has not fetched yet. The fetching itself continues in the background.";
+        "Queues every movie, series, season and episode KasuMeta has not fetched yet, or fetched with an older version of the plugin. The fetching itself continues in the background.";
 
     /// <inheritdoc />
     public string Category => "KasuMeta";
@@ -45,7 +45,11 @@ public sealed class BackfillTask : IScheduledTask
     {
         var ids = _library.ListAllIds();
         progress.Report(25);
-        var known = await _store.GetKnownItemIdsAsync(ids, cancellationToken).ConfigureAwait(false);
+        // "Known" means fetched by the current fetch logic: after an update that stores something
+        // new (Phase 2 added images), items fetched by the older build are queued once more.
+        var known = await _store
+            .GetKnownItemIdsAsync(ids, cancellationToken, MetadataFetcher.FetchVersion)
+            .ConfigureAwait(false);
         progress.Report(50);
 
         var queued = 0;

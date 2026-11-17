@@ -153,6 +153,59 @@ public sealed class KasuMetaControllerTests : IDisposable
         Assert.Equal([expected], fields);
     }
 
+    [Theory]
+    [InlineData("Primary", "Primary")]
+    [InlineData("logo", "Logo")]
+    [InlineData(" BACKDROP ", "Backdrop")]
+    public void Image_types_accept_any_casing(string raw, string expected)
+    {
+        Assert.True(KasuMetaController.TryParseImageTypes([raw], out var types, out _));
+        Assert.Equal([expected], types);
+    }
+
+    [Fact]
+    public void Field_filter_null_means_all_and_empty_means_none()
+    {
+        Assert.True(KasuMetaController.TryParseFields(null, out var all, out _));
+        Assert.True(KasuMetaController.TryParseFields([], out var none, out _));
+
+        Assert.Equal(MetadataFields.All, all);
+        Assert.Empty(none);
+    }
+
+    [Fact]
+    public void Image_filter_null_means_all_and_empty_means_none()
+    {
+        Assert.True(KasuMetaController.TryParseImageTypes(null, out var all, out _));
+        Assert.True(KasuMetaController.TryParseImageTypes([], out var none, out _));
+
+        Assert.Equal(LocalizedImageTypes.All, all);
+        Assert.Empty(none);
+    }
+
+    [Fact]
+    public async Task An_unknown_image_type_is_a_bad_request()
+    {
+        var request = Request(Visible);
+        request.Images = ["Poster"];
+
+        var result = await Controller(user: UserId).GetBatch(request, None);
+
+        Assert.Contains("Poster", Assert.IsType<BadRequestObjectResult>(result.Result).Value as string, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Batch_serves_localized_posters()
+    {
+        await _db.Store.UpsertImagesAsync(
+            [new(Visible, "es-MX", LocalizedImageTypes.Primary, "https://image.tmdb.org/t/p/original/mx.jpg", MetadataSources.Tmdb)],
+            None);
+
+        var batch = (await Controller(user: UserId).GetBatch(Request(Visible), None)).Value!;
+
+        Assert.Equal("https://image.tmdb.org/t/p/original/mx.jpg", batch.Items[Visible.ToString("N")].Images!["Primary"].Url);
+    }
+
     [Fact]
     public async Task Item_returns_the_overlay_or_404()
     {

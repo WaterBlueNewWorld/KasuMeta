@@ -35,6 +35,12 @@ public enum FetchResult
 /// </summary>
 public sealed class MetadataFetcher
 {
+    /// <summary>
+    /// Version of what a fetch stores: 1 = text, 2 = text and images. Raise it whenever a fetch
+    /// starts storing something new; the backfill then re-queues items fetched by older builds.
+    /// </summary>
+    public const int FetchVersion = 2;
+
     private readonly ILibraryItemSource _library;
     private readonly ILocalizedMetadataStore _store;
     private readonly ITmdbClient _tmdb;
@@ -69,13 +75,15 @@ public sealed class MetadataFetcher
         if (!force)
         {
             var state = await _store.GetFetchStateAsync(itemId, cancellationToken).ConfigureAwait(false);
-            if (state is { Status: FetchStatus.Ok or FetchStatus.Skipped } && SameIds(state.ProviderIds, snapshot))
+            if (state is { Status: FetchStatus.Ok or FetchStatus.Skipped }
+                && state.FetchVersion >= FetchVersion
+                && SameIds(state.ProviderIds, snapshot))
             {
                 return FetchResult.Unchanged;
             }
         }
 
-        IReadOnlyList<TmdbTranslation>? translations;
+        TmdbTitle? title;
         try
         {
             var (call, skipReason) = PlanCall(item);
@@ -85,7 +93,7 @@ public sealed class MetadataFetcher
                 return FetchResult.Skipped;
             }
 
-            translations = await call(cancellationToken).ConfigureAwait(false);
+            title = await call(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
@@ -93,17 +101,35 @@ public sealed class MetadataFetcher
             return FetchResult.Failed;
         }
 
-        if (translations is null)
+        if (title is null)
         {
             await SetStateAsync(itemId, snapshot, FetchStatus.Skipped, "TMDB has no such title (404)", cancellationToken)
                 .ConfigureAwait(false);
             return FetchResult.Skipped;
         }
 
-        var rows = ToFields(itemId, translations, _config.Current.EnabledLocales);
-        await _store.ReplaceProviderFieldsAsync(itemId, MetadataSources.Tmdb, rows, cancellationToken).ConfigureAwait(false);
+        var enabled = _config.Current.EnabledLocales;
+        await _store
+            .ReplaceProviderFieldsAsync(itemId, MetadataSources.Tmdb, ToFields(itemId, title.Translations, enabled), cancellationToken)
+            .ConfigureAwait(false);
+        await _store
+            .ReplaceProviderImagesAsync(itemId, MetadataSources.Tmdb, ToImages(itemId, title.Images, enabled), cancellationToken)
+            .ConfigureAwait(false);
         await SetStateAsync(itemId, snapshot, FetchStatus.Ok, null, cancellationToken).ConfigureAwait(false);
         return FetchResult.Fetched;
+    }
+
+    /// <summary>Turns images into rows, keeping the enabled locales' fallback groups.</summary>
+    internal static IReadOnlyList<LocalizedImage> ToImages(
+        Guid itemId,
+        IReadOnlyList<TmdbImage> images,
+        IReadOnlyCollection<string> enabledLocales)
+    {
+        var groups = Groups(enabledLocales);
+        return images
+            .Where(i => groups.Contains(LocaleChain.FallbackGroup(i.Locale)))
+            .Select(i => new LocalizedImage(itemId, i.Locale, i.ImageType, i.Url, MetadataSources.Tmdb, Width: i.Width, Height: i.Height))
+            .ToList();
     }
 
     /// <summary>Turns translations into field rows, keeping the enabled locales' fallback groups.</summary>
@@ -112,10 +138,7 @@ public sealed class MetadataFetcher
         IReadOnlyList<TmdbTranslation> translations,
         IReadOnlyCollection<string> enabledLocales)
     {
-        var groups = enabledLocales
-            .Select(l => LocaleChain.TryNormalize(l, out var n) ? LocaleChain.FallbackGroup(n) : null)
-            .OfType<string>()
-            .ToHashSet(StringComparer.Ordinal);
+        var groups = Groups(enabledLocales);
 
         var rows = new List<LocalizedField>();
         foreach (var t in translations)
@@ -141,6 +164,12 @@ public sealed class MetadataFetcher
         return rows;
     }
 
+    private static HashSet<string> Groups(IReadOnlyCollection<string> enabledLocales) =>
+        enabledLocales
+            .Select(l => LocaleChain.TryNormalize(l, out var n) ? LocaleChain.FallbackGroup(n) : null)
+            .OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
+
     private static bool SameIds(IReadOnlyDictionary<string, string> stored, IReadOnlyDictionary<string, string> current) =>
         SqliteLocalizedMetadataStore.SerializeProviderIds(stored) == SqliteLocalizedMetadataStore.SerializeProviderIds(current);
 
@@ -159,20 +188,20 @@ public sealed class MetadataFetcher
             ? id
             : null;
 
-    private (Func<CancellationToken, Task<IReadOnlyList<TmdbTranslation>?>>? Call, string? SkipReason) PlanCall(LibraryItemInfo item)
+    private (Func<CancellationToken, Task<TmdbTitle?>>? Call, string? SkipReason) PlanCall(LibraryItemInfo item)
     {
         switch (item.Kind)
         {
             case ItemKind.Movie when TmdbId(item.ProviderIds) is { } movie:
-                return (ct => _tmdb.GetMovieTranslationsAsync(movie, ct), null);
+                return (ct => _tmdb.GetMovieAsync(movie, ct), null);
             case ItemKind.Series when TmdbId(item.ProviderIds) is { } series:
-                return (ct => _tmdb.GetSeriesTranslationsAsync(series, ct), null);
+                return (ct => _tmdb.GetSeriesAsync(series, ct), null);
             case ItemKind.Season when TmdbId(item.SeriesProviderIds) is { } series && item.SeasonNumber is { } season:
-                return (ct => _tmdb.GetSeasonTranslationsAsync(series, season, ct), null);
+                return (ct => _tmdb.GetSeasonAsync(series, season, ct), null);
             case ItemKind.Episode when TmdbId(item.SeriesProviderIds) is { } series
                                        && item.SeasonNumber is { } season
                                        && item.EpisodeNumber is { } episode:
-                return (ct => _tmdb.GetEpisodeTranslationsAsync(series, season, episode, ct), null);
+                return (ct => _tmdb.GetEpisodeAsync(series, season, episode, ct), null);
             case ItemKind.Season or ItemKind.Episode:
                 return (null, "No TMDB id on the series, or no season/episode number");
             default:
@@ -186,5 +215,7 @@ public sealed class MetadataFetcher
         FetchStatus status,
         string? error,
         CancellationToken cancellationToken) =>
-        _store.SetFetchStateAsync(new FetchState(itemId, snapshot, _time.GetUtcNow(), status, error), cancellationToken);
+        _store.SetFetchStateAsync(
+            new FetchState(itemId, snapshot, _time.GetUtcNow(), status, error, FetchVersion),
+            cancellationToken);
 }

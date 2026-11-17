@@ -61,9 +61,9 @@ public class KasuMetaController : ControllerBase
             FallbackToBaseLanguage: config.FallbackToBaseLanguage);
     }
 
-    /// <summary>Localized overlays for many items at once (one call per grid page).</summary>
+    /// <summary>Localized overlays (text and images) for many items at once (one call per grid page).</summary>
     /// <response code="200">Overlays for the items that have one; the rest are listed in Missing.</response>
-    /// <response code="400">Bad locale, unknown field, or more than <see cref="MaxBatchSize"/> ids.</response>
+    /// <response code="400">Bad locale, unknown field or image type, or more than <see cref="MaxBatchSize"/> ids.</response>
     [HttpPost("Items/Batch")]
     [Consumes(MediaTypeNames.Application.Json)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -87,12 +87,20 @@ public class KasuMetaController : ControllerBase
             return BadRequest($"Unknown field '{unknown}'. Known: {string.Join(", ", MetadataFields.All.Order(StringComparer.Ordinal))}.");
         }
 
+        if (!TryParseImageTypes(request.Images, out var imageTypes, out var unknownImage))
+        {
+            return BadRequest(
+                $"Unknown image type '{unknownImage}'. Known: {string.Join(", ", LocalizedImageTypes.All.Order(StringComparer.Ordinal))}.");
+        }
+
         if (!TryVisible(request.ItemIds, out var visible))
         {
             return Forbid();
         }
 
-        return await _overlays.BuildAsync(request.ItemIds, visible, locale, fields, cancellationToken).ConfigureAwait(false);
+        return await _overlays
+            .BuildAsync(request.ItemIds, visible, locale, fields, imageTypes, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>The full localized overlay of one item (detail page).</summary>
@@ -119,7 +127,7 @@ public class KasuMetaController : ControllerBase
         }
 
         var batch = await _overlays
-            .BuildAsync([itemId], visible, normalized, MetadataFields.All, cancellationToken)
+            .BuildAsync([itemId], visible, normalized, MetadataFields.All, LocalizedImageTypes.All, cancellationToken)
             .ConfigureAwait(false);
         return batch.Items.Values.FirstOrDefault() is { } overlay ? overlay : NotFound();
     }
@@ -127,7 +135,7 @@ public class KasuMetaController : ControllerBase
     internal static bool TryParseFields(IReadOnlyList<string>? requested, out IReadOnlySet<string> fields, out string? unknown)
     {
         unknown = null;
-        if (requested is null || requested.Count == 0)
+        if (requested is null)
         {
             fields = MetadataFields.All;
             return true;
@@ -151,6 +159,35 @@ public class KasuMetaController : ControllerBase
         }
 
         fields = set;
+        return true;
+    }
+
+    /// <summary>Parses the image filter: null means all types, an empty list means none.</summary>
+    internal static bool TryParseImageTypes(IReadOnlyList<string>? requested, out IReadOnlySet<string> types, out string? unknown)
+    {
+        unknown = null;
+        if (requested is null)
+        {
+            types = LocalizedImageTypes.All;
+            return true;
+        }
+
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in requested)
+        {
+            var match = LocalizedImageTypes.All.FirstOrDefault(t =>
+                string.Equals(t, (raw ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                unknown = raw;
+                types = set;
+                return false;
+            }
+
+            set.Add(match);
+        }
+
+        types = set;
         return true;
     }
 
