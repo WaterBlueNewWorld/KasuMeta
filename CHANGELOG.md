@@ -4,6 +4,13 @@ All notable changes to KasuMeta. Format: [Keep a Changelog](https://keepachangel
 
 ## [Unreleased]
 
+### Changed
+- TMDB client: movies and series now request their details with
+  `append_to_response=translations` (still one call per item), because TMDB's entry for the
+  original language has an empty title; it is filled from `original_title` / `original_name`.
+  Seasons and episodes keep plain `/translations`. Tests replay real responses recorded for the
+  test media (`tests/…/Fixtures/tmdb`).
+
 ### Added
 - Phase 1.3 TMDB client: movie/series/season/episode `/translations` in one call per item,
   normalized to BCP-47; v3 key or v4 token; retries 429/5xx/network with backoff and

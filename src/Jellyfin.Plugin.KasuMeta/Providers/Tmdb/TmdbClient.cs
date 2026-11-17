@@ -34,8 +34,10 @@ public interface ITmdbClient
 }
 
 /// <summary>
-/// TMDB v3 client. One <c>/translations</c> call returns every language, so a fetch costs one
-/// request per item whatever the number of enabled locales.
+/// TMDB v3 client. One request per item returns every language, whatever the number of enabled
+/// locales: movies and series ask for their details with <c>append_to_response=translations</c>
+/// (the original title fills the original language's empty entry), seasons and episodes use
+/// plain <c>/translations</c>.
 /// </summary>
 /// <remarks>
 /// Polite by construction: at most <see cref="MaxConcurrency"/> requests in flight and
@@ -77,16 +79,19 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
     internal Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
 
     /// <inheritdoc />
+    /// <remarks>Details with appended translations: still one request, plus the original title.</remarks>
     public Task<IReadOnlyList<TmdbTranslation>?> GetMovieTranslationsAsync(int movieId, CancellationToken cancellationToken) =>
-        GetTranslationsAsync(Path($"movie/{movieId}/translations"), cancellationToken);
+        GetDetailsTranslationsAsync(Path($"movie/{movieId}"), cancellationToken);
 
     /// <inheritdoc />
+    /// <remarks>Details with appended translations: still one request, plus the original name.</remarks>
     public Task<IReadOnlyList<TmdbTranslation>?> GetSeriesTranslationsAsync(int seriesId, CancellationToken cancellationToken) =>
-        GetTranslationsAsync(Path($"tv/{seriesId}/translations"), cancellationToken);
+        GetDetailsTranslationsAsync(Path($"tv/{seriesId}"), cancellationToken);
 
     /// <inheritdoc />
+    /// <remarks>Plain /translations: season details carry every episode (44 KB for one season).</remarks>
     public Task<IReadOnlyList<TmdbTranslation>?> GetSeasonTranslationsAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken) =>
-        GetTranslationsAsync(Path($"tv/{seriesId}/season/{seasonNumber}/translations"), cancellationToken);
+        GetPlainTranslationsAsync(Path($"tv/{seriesId}/season/{seasonNumber}/translations"), cancellationToken);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<TmdbTranslation>?> GetEpisodeTranslationsAsync(
@@ -94,7 +99,7 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         int seasonNumber,
         int episodeNumber,
         CancellationToken cancellationToken) =>
-        GetTranslationsAsync(
+        GetPlainTranslationsAsync(
             Path($"tv/{seriesId}/season/{seasonNumber}/episode/{episodeNumber}/translations"),
             cancellationToken);
 
@@ -121,9 +126,19 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         return LocaleChain.TryNormalize(raw, out var locale) ? locale : null;
     }
 
-    internal static IReadOnlyList<TmdbTranslation> Map(TmdbTranslationsResponse response)
+    /// <summary>
+    /// Normalizes translations. When the original language and title are known, entries in that
+    /// language with no title get the original one (TMDB leaves them empty), and if TMDB has no
+    /// entry for the original language at all, a bare-language entry (<c>ja</c>) carries it.
+    /// </summary>
+    internal static IReadOnlyList<TmdbTranslation> Map(
+        TmdbTranslationsResponse response,
+        string? originalLanguage = null,
+        string? originalTitle = null)
     {
-        var result = new List<TmdbTranslation>(response.Translations.Count);
+        var original = LocaleFromTmdb(originalLanguage, null);
+        var originalText = NullIfEmpty(originalTitle);
+        var result = new List<TmdbTranslation>(response.Translations.Count + 1);
         foreach (var entry in response.Translations)
         {
             var locale = LocaleFromTmdb(entry.Language, entry.Region);
@@ -132,9 +147,15 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
                 continue;
             }
 
+            var title = NullIfEmpty(entry.Data.Title) ?? NullIfEmpty(entry.Data.Name);
+            if (title is null && original is not null && LocaleChain.Language(locale) == original)
+            {
+                title = originalText;
+            }
+
             var translation = new TmdbTranslation(
                 locale,
-                NullIfEmpty(entry.Data.Title) ?? NullIfEmpty(entry.Data.Name),
+                title,
                 NullIfEmpty(entry.Data.Overview),
                 NullIfEmpty(entry.Data.Tagline));
             if (translation is { Title: null, Overview: null, Tagline: null })
@@ -143,6 +164,12 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
             }
 
             result.Add(translation);
+        }
+
+        if (original is not null && originalText is not null
+            && !result.Any(t => LocaleChain.Language(t.Locale) == original && t.Title is not null))
+        {
+            result.Add(new TmdbTranslation(original, originalText, null, null));
         }
 
         return result;
@@ -165,7 +192,34 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         return wait < TimeSpan.Zero ? TimeSpan.Zero : wait > MaxRetryAfter ? MaxRetryAfter : wait;
     }
 
-    private async Task<IReadOnlyList<TmdbTranslation>?> GetTranslationsAsync(string path, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<TmdbTranslation>?> GetDetailsTranslationsAsync(string path, CancellationToken cancellationToken)
+    {
+        var (found, details) = await GetJsonAsync<TmdbDetailsResponse>(path, "append_to_response=translations", cancellationToken)
+            .ConfigureAwait(false);
+        if (!found)
+        {
+            return null;
+        }
+
+        return details?.Translations is null
+            ? []
+            : Map(details.Translations, details.OriginalLanguage, details.OriginalTitle ?? details.OriginalName);
+    }
+
+    private async Task<IReadOnlyList<TmdbTranslation>?> GetPlainTranslationsAsync(string path, CancellationToken cancellationToken)
+    {
+        var (found, body) = await GetJsonAsync<TmdbTranslationsResponse>(path, null, cancellationToken).ConfigureAwait(false);
+        if (!found)
+        {
+            return null;
+        }
+
+        return body is null ? [] : Map(body);
+    }
+
+    /// <summary>GETs and parses JSON; <c>Found</c> is false on 404.</summary>
+    private async Task<(bool Found, T? Body)> GetJsonAsync<T>(string path, string? query, CancellationToken cancellationToken)
+        where T : class
     {
         var key = _config.Current.TmdbApiKey?.Trim();
         if (string.IsNullOrEmpty(key))
@@ -175,7 +229,18 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
 
         // A v4 read access token is a JWT; a v3 key is 32 hex characters.
         var bearer = key.StartsWith("eyJ", StringComparison.Ordinal);
-        var uri = new Uri(BaseUri, bearer ? path : $"{path}?api_key={Uri.EscapeDataString(key)}");
+        var parameters = new List<string>(2);
+        if (query is not null)
+        {
+            parameters.Add(query);
+        }
+
+        if (!bearer)
+        {
+            parameters.Add("api_key=" + Uri.EscapeDataString(key));
+        }
+
+        var uri = new Uri(BaseUri, parameters.Count == 0 ? path : path + "?" + string.Join('&', parameters));
 
         for (var attempt = 0; ; attempt++)
         {
@@ -201,16 +266,16 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
                     await using (stream.ConfigureAwait(false))
                     {
                         var body = await JsonSerializer
-                            .DeserializeAsync<TmdbTranslationsResponse>(stream, cancellationToken: cancellationToken)
+                            .DeserializeAsync<T>(stream, cancellationToken: cancellationToken)
                             .ConfigureAwait(false);
-                        return body is null ? [] : Map(body);
+                        return (true, body);
                     }
                 }
 
                 switch (response.StatusCode)
                 {
                     case HttpStatusCode.NotFound:
-                        return null;
+                        return (false, null);
                     case HttpStatusCode.Unauthorized:
                         throw new ProviderAuthenticationException("TMDB rejected the API key (401).");
                 }

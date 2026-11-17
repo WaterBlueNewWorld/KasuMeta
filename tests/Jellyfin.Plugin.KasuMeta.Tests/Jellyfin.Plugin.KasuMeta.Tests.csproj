@@ -22,6 +22,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Real provider responses recorded from the dev server's key; see Fixtures/README.md. -->
+    <None Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Jellyfin.Plugin.KasuMeta\Jellyfin.Plugin.KasuMeta.csproj" />
   </ItemGroup>
 

@@ -9,75 +9,141 @@ namespace Jellyfin.Plugin.KasuMeta.Tests.Providers;
 
 public class TmdbClientTests
 {
-    // Hand-written in the shape TMDB's API reference documents for /translations. Replace with
-    // recorded responses once a key is configured on the dev server (PLAN.md §3, Phase 1.3).
-    private const string MovieTranslations = """
-        {
-          "id": 129,
-          "translations": [
-            { "iso_3166_1": "MX", "iso_639_1": "es", "name": "Español", "english_name": "Spanish",
-              "data": { "homepage": "", "overview": "Chihiro, una niña de diez años…", "runtime": 125,
-                        "tagline": "", "title": "El viaje de Chihiro" } },
-            { "iso_3166_1": "JP", "iso_639_1": "ja", "name": "日本語", "english_name": "Japanese",
-              "data": { "homepage": "", "overview": "", "runtime": 0, "tagline": "", "title": "千と千尋の神隠し" } },
-            { "iso_3166_1": "HK", "iso_639_1": "cn", "name": "广州话 / 廣州話", "english_name": "Cantonese",
-              "data": { "homepage": "", "overview": "", "runtime": 0, "tagline": "", "title": "千與千尋" } },
-            { "iso_3166_1": "", "iso_639_1": "eo", "name": "Esperanto", "english_name": "Esperanto",
-              "data": { "homepage": "", "overview": "Resumo", "runtime": 0, "tagline": "", "title": "" } },
-            { "iso_3166_1": "DE", "iso_639_1": "de", "name": "Deutsch", "english_name": "German",
-              "data": { "homepage": "", "overview": "", "runtime": 0, "tagline": "", "title": "" } }
-          ]
-        }
-        """;
+    private const string V3Key = "0123456789abcdef0123456789abcdef";
+    private const string V4Token = "eyJhbGciOiJIUzI1NiJ9.e30.sig";
 
-    private const string SeriesTranslations = """
-        {
-          "id": 80834,
-          "translations": [
-            { "iso_3166_1": "MX", "iso_639_1": "es", "name": "Español", "english_name": "Spanish",
-              "data": { "name": "Revue Starlight", "overview": "Karen y Hikari…", "homepage": "", "tagline": "Posición cero" } }
-          ]
-        }
-        """;
-
+    // Shapes as recorded: details nest the appended translations one level deeper.
+    private const string EmptyDetails = """{"original_language":"en","translations":{"translations":[]}}""";
+    private const string EmptyTranslations = """{"translations":[]}""";
     private static readonly CancellationToken None = CancellationToken.None;
 
+    // ---- Recorded responses (Fixtures/README.md) ----
+
     [Fact]
-    public async Task Movie_translations_are_normalized()
+    public async Task Antitrust_gets_its_english_title_from_original_title()
     {
-        var (client, handler, _) = Create("0123456789abcdef0123456789abcdef");
-        handler.Respond(HttpStatusCode.OK, MovieTranslations);
+        var translations = await RecordedAsync("movie-9989.json", c => c.GetMovieTranslationsAsync(9989, None));
 
-        var translations = await client.GetMovieTranslationsAsync(129, None);
-
-        Assert.NotNull(translations);
-        var es = Assert.Single(translations, t => t.Locale == "es-MX");
-        Assert.Equal(("El viaje de Chihiro", "Chihiro, una niña de diez años…", (string?)null), (es.Title, es.Overview, es.Tagline));
-        Assert.Null(Assert.Single(translations, t => t.Locale == "ja-JP").Overview);
-        Assert.Equal("千與千尋", Assert.Single(translations, t => t.Locale == "yue-HK").Title); // TMDB "cn"
-        Assert.Equal("Resumo", Assert.Single(translations, t => t.Locale == "eo").Overview); // no region
-        Assert.DoesNotContain(translations, t => t.Locale == "de-DE"); // nothing but empty strings
+        // TMDB's en-US entry has an empty title: English is the original language.
+        Assert.Equal("Antitrust", Find(translations, "en-US").Title);
+        Assert.StartsWith("Truth can be dangerous...Trust", Find(translations, "en-US").Tagline, StringComparison.Ordinal);
+        Assert.Equal("Amenaza Virtual", Find(translations, "es-MX").Title);
+        Assert.Equal("Conspiración en la red: Hackers 3", Find(translations, "es-ES").Title);
+        Assert.Equal("奪命連線", Find(translations, "zh-TW").Title);
+        var ja = Find(translations, "ja-JP");
+        Assert.Equal(("サベイランス", (string?)null), (ja.Title, ja.Overview)); // title only
     }
 
     [Fact]
-    public async Task Series_use_name_for_the_title()
+    public async Task Cabin_in_the_woods_differs_between_mexico_and_spain()
     {
-        var (client, handler, _) = Create("0123456789abcdef0123456789abcdef");
-        handler.Respond(HttpStatusCode.OK, SeriesTranslations);
+        var translations = await RecordedAsync("movie-22970.json", c => c.GetMovieTranslationsAsync(22970, None));
 
-        var es = Assert.Single((await client.GetSeriesTranslationsAsync(80834, None))!);
-
-        Assert.Equal(("Revue Starlight", "Posición cero"), (es.Title, es.Tagline));
+        Assert.Equal("La cabaña del terror", Find(translations, "es-MX").Title);
+        Assert.Equal("La cabaña en el bosque", Find(translations, "es-ES").Title);
+        Assert.Equal("The Cabin in the Woods", Find(translations, "en-US").Title);
+        Assert.Equal("林中小屋", Find(translations, "zh-CN").Title);
+        Assert.Equal("キャビン", Find(translations, "ja-JP").Title);
+        Assert.All(translations, t => Assert.False(t is { Title: null, Overview: null, Tagline: null }));
     }
+
+    [Fact]
+    public async Task Magia_record_gets_its_japanese_title_from_original_name()
+    {
+        var translations = await RecordedAsync("tv-94523.json", c => c.GetSeriesTranslationsAsync(94523, None));
+
+        var ja = Find(translations, "ja-JP");
+        Assert.Equal("マギアレコード 魔法少女まどか☆マギカ外伝", ja.Title); // empty in /translations
+        Assert.NotNull(ja.Overview);
+        Assert.Equal("それは、少女たちも知らない、願いの物語。", ja.Tagline);
+        // es-MX has a title but no overview; es-ES has both. Fallback is per field (LocaleChain).
+        Assert.Null(Find(translations, "es-MX").Overview);
+        Assert.NotNull(Find(translations, "es-ES").Overview);
+    }
+
+    [Fact]
+    public async Task A_translated_title_is_kept_over_the_original_name()
+    {
+        var translations = await RecordedAsync("tv-80834.json", c => c.GetSeriesTranslationsAsync(80834, None));
+
+        // The ja-JP translation has its own spelling (with "・"); original_name has none.
+        Assert.Equal("少女☆歌劇 レヴュー・スタァライト", Find(translations, "ja-JP").Title);
+        Assert.Equal("Revue Starlight", Find(translations, "en-US").Title);
+        Assert.Equal("我，再生产", Find(translations, "zh-CN").Tagline);
+    }
+
+    [Fact]
+    public async Task Season_names_are_mostly_missing()
+    {
+        var translations = await RecordedAsync("tv-80834-s1.translations.json", c => c.GetSeasonTranslationsAsync(80834, 1, None));
+
+        Assert.Equal("少女☆歌剧 Revue Starlight", Find(translations, "zh-CN").Title);
+        Assert.DoesNotContain(translations, t => t.Locale is "es-MX" or "es-ES" or "en-US"); // all empty
+    }
+
+    [Fact]
+    public async Task Episode_titles_come_in_each_language()
+    {
+        var translations = await RecordedAsync(
+            "tv-80834-s1e1.translations.json",
+            c => c.GetEpisodeTranslationsAsync(80834, 1, 1, None));
+
+        Assert.Equal("Stage Girls", Find(translations, "en-US").Title);
+        Assert.Equal("Chicas del escenario", Find(translations, "es-MX").Title);
+        Assert.Equal("舞台少女", Find(translations, "ja-JP").Title);
+        Assert.DoesNotContain(translations, t => t.Locale == "es-ES"); // empty
+    }
+
+    [Fact]
+    public async Task Not_found_is_null()
+    {
+        var (client, handler, _) = Create(V4Token);
+        handler.Respond(HttpStatusCode.NotFound, Fixture("movie-404.json"));
+
+        Assert.Null(await client.GetMovieTranslationsAsync(999999999, None));
+    }
+
+    // ---- Mapping rules TMDB data doesn't happen to cover ----
+
+    [Fact]
+    public void Map_converts_cantonese_and_regionless_entries_and_drops_empty_ones()
+    {
+        var response = new TmdbTranslationsResponse
+        {
+            Translations =
+            [
+                Entry("cn", "HK", title: "千與千尋"),
+                Entry("eo", "", overview: "Resumo"),
+                Entry("de", "DE"),
+                Entry("xx-bad", "US", title: "ignored"),
+            ],
+        };
+
+        var translations = TmdbClient.Map(response);
+
+        Assert.Equal(["yue-HK", "eo"], translations.Select(t => t.Locale));
+    }
+
+    [Fact]
+    public void Map_adds_the_original_title_when_tmdb_has_no_entry_for_that_language()
+    {
+        var response = new TmdbTranslationsResponse { Translations = [Entry("en", "US", title: "Spirited Away")] };
+
+        var translations = TmdbClient.Map(response, "ja", "千と千尋の神隠し");
+
+        Assert.Equal(("ja", "千と千尋の神隠し"), (translations[^1].Locale, translations[^1].Title));
+    }
+
+    // ---- HTTP behaviour ----
 
     [Fact]
     public async Task Each_kind_calls_its_path()
     {
-        var (client, handler, _) = Create("0123456789abcdef0123456789abcdef");
-        for (var i = 0; i < 4; i++)
-        {
-            handler.Respond(HttpStatusCode.OK, """{"translations":[]}""");
-        }
+        var (client, handler, _) = Create(V4Token);
+        handler.Respond(HttpStatusCode.OK, EmptyDetails);
+        handler.Respond(HttpStatusCode.OK, EmptyDetails);
+        handler.Respond(HttpStatusCode.OK, EmptyTranslations);
+        handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
         await client.GetMovieTranslationsAsync(129, None);
         await client.GetSeriesTranslationsAsync(80834, None);
@@ -85,35 +151,42 @@ public class TmdbClientTests
         await client.GetEpisodeTranslationsAsync(80834, 1, 3, None);
 
         Assert.Equal(
-            ["/3/movie/129/translations", "/3/tv/80834/translations", "/3/tv/80834/season/1/translations", "/3/tv/80834/season/1/episode/3/translations"],
-            handler.Requests.Select(r => r.RequestUri!.AbsolutePath));
+            [
+                "/3/movie/129?append_to_response=translations",
+                "/3/tv/80834?append_to_response=translations",
+                "/3/tv/80834/season/1/translations",
+                "/3/tv/80834/season/1/episode/3/translations",
+            ],
+            handler.Requests.Select(r => r.RequestUri!.PathAndQuery));
         Assert.All(handler.Requests, r => Assert.Equal("api.themoviedb.org", r.RequestUri!.Host));
     }
 
     [Fact]
     public async Task A_v3_key_goes_in_the_query()
     {
-        var (client, handler, _) = Create("0123456789abcdef0123456789abcdef");
-        handler.Respond(HttpStatusCode.OK, """{"translations":[]}""");
+        var (client, handler, _) = Create(V3Key);
+        handler.Respond(HttpStatusCode.OK, EmptyDetails);
+        handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
         await client.GetMovieTranslationsAsync(1, None);
+        await client.GetEpisodeTranslationsAsync(1, 1, 1, None);
 
-        var request = Assert.Single(handler.Requests);
-        Assert.Equal("?api_key=0123456789abcdef0123456789abcdef", request.RequestUri!.Query);
-        Assert.Null(request.Headers.Authorization);
+        Assert.Equal($"?append_to_response=translations&api_key={V3Key}", handler.Requests[0].RequestUri!.Query);
+        Assert.Equal($"?api_key={V3Key}", handler.Requests[1].RequestUri!.Query);
+        Assert.All(handler.Requests, r => Assert.Null(r.Headers.Authorization));
     }
 
     [Fact]
     public async Task A_v4_token_goes_in_the_bearer_header()
     {
-        var (client, handler, _) = Create("eyJhbGciOiJIUzI1NiJ9.e30.sig");
-        handler.Respond(HttpStatusCode.OK, """{"translations":[]}""");
+        var (client, handler, _) = Create(V4Token);
+        handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
-        await client.GetMovieTranslationsAsync(1, None);
+        await client.GetEpisodeTranslationsAsync(1, 1, 1, None);
 
         var request = Assert.Single(handler.Requests);
         Assert.Equal(string.Empty, request.RequestUri!.Query);
-        Assert.Equal(("Bearer", "eyJhbGciOiJIUzI1NiJ9.e30.sig"), (request.Headers.Authorization!.Scheme, request.Headers.Authorization.Parameter));
+        Assert.Equal(("Bearer", V4Token), (request.Headers.Authorization!.Scheme, request.Headers.Authorization.Parameter));
     }
 
     [Theory]
@@ -128,18 +201,9 @@ public class TmdbClientTests
     }
 
     [Fact]
-    public async Task Not_found_is_null()
-    {
-        var (client, handler, _) = Create("0123456789abcdef0123456789abcdef");
-        handler.Respond(HttpStatusCode.NotFound, """{"success":false,"status_code":34}""");
-
-        Assert.Null(await client.GetMovieTranslationsAsync(999999999, None));
-    }
-
-    [Fact]
     public async Task A_rejected_key_is_not_retried()
     {
-        var (client, handler, delays) = Create("0123456789abcdef0123456789abcdef");
+        var (client, handler, delays) = Create(V3Key);
         handler.Respond(HttpStatusCode.Unauthorized, """{"status_code":7}""");
 
         await Assert.ThrowsAsync<ProviderAuthenticationException>(() => client.GetMovieTranslationsAsync(1, None));
@@ -150,11 +214,11 @@ public class TmdbClientTests
     [Fact]
     public async Task Too_many_requests_waits_for_Retry_After()
     {
-        var (client, handler, delays) = Create("0123456789abcdef0123456789abcdef");
+        var (client, handler, delays) = Create(V4Token);
         handler.Respond(HttpStatusCode.TooManyRequests, "{}", retryAfterSeconds: 2);
-        handler.Respond(HttpStatusCode.OK, MovieTranslations);
+        handler.Respond(HttpStatusCode.OK, Fixture("movie-9989.json"));
 
-        var translations = await client.GetMovieTranslationsAsync(129, None);
+        var translations = await client.GetMovieTranslationsAsync(9989, None);
 
         Assert.NotEmpty(translations!);
         Assert.Equal([TimeSpan.FromSeconds(2)], delays);
@@ -163,7 +227,7 @@ public class TmdbClientTests
     [Fact]
     public async Task Server_errors_back_off_then_give_up()
     {
-        var (client, handler, delays) = Create("0123456789abcdef0123456789abcdef");
+        var (client, handler, delays) = Create(V3Key);
         for (var i = 0; i <= TmdbClient.MaxRetries; i++)
         {
             handler.Respond(HttpStatusCode.BadGateway, "{}");
@@ -174,24 +238,24 @@ public class TmdbClientTests
         Assert.Equal(HttpStatusCode.BadGateway, error.StatusCode);
         Assert.Equal(TmdbClient.MaxRetries + 1, handler.Requests.Count);
         Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], delays);
-        Assert.DoesNotContain("0123456789abcdef", error.Message, StringComparison.Ordinal); // never the key
+        Assert.DoesNotContain(V3Key, error.Message, StringComparison.Ordinal); // never the key
     }
 
     [Fact]
     public async Task Network_errors_are_retried()
     {
-        var (client, handler, delays) = Create("0123456789abcdef0123456789abcdef");
+        var (client, handler, delays) = Create(V4Token);
         handler.Fail(new HttpRequestException("connection reset"));
-        handler.Respond(HttpStatusCode.OK, """{"translations":[]}""");
+        handler.Respond(HttpStatusCode.OK, EmptyTranslations);
 
-        Assert.NotNull(await client.GetMovieTranslationsAsync(1, None));
+        Assert.NotNull(await client.GetEpisodeTranslationsAsync(1, 1, 1, None));
         Assert.Equal([TimeSpan.FromSeconds(1)], delays);
     }
 
     [Fact]
     public async Task Other_client_errors_fail_at_once()
     {
-        var (client, handler, delays) = Create("0123456789abcdef0123456789abcdef");
+        var (client, handler, delays) = Create(V4Token);
         handler.Respond(HttpStatusCode.BadRequest, "{}");
 
         await Assert.ThrowsAsync<HttpRequestException>(() => client.GetMovieTranslationsAsync(1, None));
@@ -201,7 +265,7 @@ public class TmdbClientTests
     [Fact]
     public async Task Caller_cancellation_is_not_retried()
     {
-        var (client, handler, delays) = Create("0123456789abcdef0123456789abcdef");
+        var (client, handler, delays) = Create(V4Token);
         handler.Respond(HttpStatusCode.OK, "{}");
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -223,6 +287,28 @@ public class TmdbClientTests
     {
         Assert.Equal(expected, TmdbClient.LocaleFromTmdb(language, region));
     }
+
+    // ---- Helpers ----
+
+    private static string Fixture(string name) =>
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "tmdb", name), Encoding.UTF8);
+
+    private static async Task<IReadOnlyList<TmdbTranslation>> RecordedAsync(
+        string fixture,
+        Func<TmdbClient, Task<IReadOnlyList<TmdbTranslation>?>> call)
+    {
+        var (client, handler, _) = Create(V4Token);
+        handler.Respond(HttpStatusCode.OK, Fixture(fixture));
+        var translations = await call(client);
+        Assert.NotNull(translations);
+        return translations;
+    }
+
+    private static TmdbTranslation Find(IReadOnlyList<TmdbTranslation> translations, string locale) =>
+        Assert.Single(translations, t => t.Locale == locale);
+
+    private static TmdbTranslationEntry Entry(string language, string region, string? title = null, string? overview = null) =>
+        new() { Language = language, Region = region, Data = new TmdbTranslationData { Title = title, Overview = overview } };
 
     private static (TmdbClient Client, FakeHandler Handler, List<TimeSpan> Delays) Create(string key)
     {
