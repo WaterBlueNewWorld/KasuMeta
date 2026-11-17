@@ -1,0 +1,25 @@
+<Project>
+  <!-- Shared settings for every project in the solution. -->
+  <PropertyGroup>
+    <!-- Jellyfin 12.x runs on .NET 10. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      The Jellyfin ABI to compile against. Jellyfin loads a plugin on any server at or above its
+      targetAbi (build.yaml), so building against the lowest 12.x lets one DLL serve every 12.x
+      server, production's 12.1 included. Check newer lines with:
+        dotnet test -p:JellyfinVersion=12.1.0
+    -->
+    <JellyfinVersion Condition="'$(JellyfinVersion)' == ''">12.0.0</JellyfinVersion>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+</Project>

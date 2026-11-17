@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>KasuMeta</title>
+</head>
+<body>
+<div id="KasuMetaConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="KasuMetaConfigForm">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">KasuMeta</h2>
+                    <p>Localized titles, overviews and artwork for the client app.</p>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="EnabledLocales">Enabled locales</label>
+                    <input id="EnabledLocales" name="EnabledLocales" type="text" is="emby-input" />
+                    <div class="fieldDescription">BCP-47 codes, comma separated (e.g. en-US, es-MX, ja-JP).</div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="FallbackToBaseLanguage" name="FallbackToBaseLanguage" type="checkbox" is="emby-checkbox" />
+                        <span>Fall back to the base language (es-MX → es)</span>
+                    </label>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDB API key</label>
+                    <input id="TmdbApiKey" name="TmdbApiKey" type="password" is="emby-input" autocomplete="off" />
+                    <div class="fieldDescription">Stays on the server; clients never see it.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TvdbApiKey">TVDB API key</label>
+                    <input id="TvdbApiKey" name="TvdbApiKey" type="password" is="emby-input" autocomplete="off" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="RefreshIntervalHours">Refresh interval (hours)</label>
+                    <input id="RefreshIntervalHours" name="RefreshIntervalHours" type="number" min="1" is="emby-input" />
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script type="text/javascript">
+        var KasuMetaConfig = {
+            pluginUniqueId: '703b8e8e-7d16-40bd-8f92-87fad8b741ae'
+        };
+
+        document.querySelector('#KasuMetaConfigPage')
+            .addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(KasuMetaConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#EnabledLocales').value = (config.EnabledLocales || []).join(', ');
+                    document.querySelector('#FallbackToBaseLanguage').checked = config.FallbackToBaseLanguage;
+                    document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
+                    document.querySelector('#TvdbApiKey').value = config.TvdbApiKey || '';
+                    document.querySelector('#RefreshIntervalHours').value = config.RefreshIntervalHours;
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+        document.querySelector('#KasuMetaConfigForm')
+            .addEventListener('submit', function (e) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(KasuMetaConfig.pluginUniqueId).then(function (config) {
+                    config.EnabledLocales = document.querySelector('#EnabledLocales').value
+                        .split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+                    config.FallbackToBaseLanguage = document.querySelector('#FallbackToBaseLanguage').checked;
+                    config.TmdbApiKey = document.querySelector('#TmdbApiKey').value.trim();
+                    config.TvdbApiKey = document.querySelector('#TvdbApiKey').value.trim();
+                    config.RefreshIntervalHours = parseInt(document.querySelector('#RefreshIntervalHours').value, 10) || 168;
+                    ApiClient.updatePluginConfiguration(KasuMetaConfig.pluginUniqueId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+                e.preventDefault();
+                return false;
+            });
+    </script>
+</div>
+</body>
+</html>

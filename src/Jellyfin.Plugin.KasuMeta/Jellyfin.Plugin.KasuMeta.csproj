@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Jellyfin.Plugin.KasuMeta</RootNamespace>
+    <AssemblyName>Jellyfin.Plugin.KasuMeta</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Missing XML docs on internals shouldn't break the build. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The server provides these at runtime: compile against them, never ship them. -->
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
+    <!--
+      Jellyfin 12.0 runs EF Core 10.0.11 on SQLite, so the server already loads Microsoft.Data.Sqlite
+      and the native e_sqlite3. Compile against that version and ship neither: two copies of
+      SQLitePCL in one process conflict. Assembly version is 10.0.0.0 across 10.0.x patches.
+    -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.11" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Configuration\configPage.html" />
+    <EmbeddedResource Include="Configuration\configPage.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.KasuMeta.Tests" />
+  </ItemGroup>
+
+</Project>

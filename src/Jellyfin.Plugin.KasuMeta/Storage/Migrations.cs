@@ -1,0 +1,116 @@
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.KasuMeta.Storage;
+
+/// <summary>
+/// Forward-only schema migrations. Never edit a shipped migration: add a new one.
+/// </summary>
+internal static class Migrations
+{
+    /// <summary>Gets every migration, in order. Versions start at 1 with no gaps.</summary>
+    internal static IReadOnlyList<(int Version, string Sql)> All { get; } =
+    [
+        (1, """
+            CREATE TABLE localized_field (
+              item_id    TEXT    NOT NULL,           -- Jellyfin item GUID, "N" format
+              locale     TEXT    NOT NULL,           -- BCP-47, e.g. 'es-MX'
+              field      TEXT    NOT NULL,           -- MetadataFields
+              value      TEXT    NOT NULL,
+              source     TEXT    NOT NULL,           -- MetadataSources
+              locked     INTEGER NOT NULL DEFAULT 0, -- 1 = manual override
+              updated_at INTEGER NOT NULL,           -- unix seconds
+              PRIMARY KEY (item_id, locale, field)
+            ) WITHOUT ROWID;
+
+            CREATE TABLE localized_image (
+              item_id    TEXT    NOT NULL,
+              locale     TEXT    NOT NULL,
+              image_type TEXT    NOT NULL,           -- LocalizedImageTypes
+              url        TEXT    NOT NULL,
+              source     TEXT    NOT NULL,
+              locked     INTEGER NOT NULL DEFAULT 0,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY (item_id, locale, image_type)
+            ) WITHOUT ROWID;
+
+            CREATE TABLE fetch_state (
+              item_id      TEXT PRIMARY KEY,
+              provider_ids TEXT NOT NULL,            -- JSON object, keys sorted
+              last_fetch   INTEGER,                  -- unix seconds, NULL = never
+              status       TEXT NOT NULL,            -- 'pending' | 'ok' | 'error'
+              last_error   TEXT
+            );
+
+            CREATE INDEX ix_fetch_state_last_fetch ON fetch_state (last_fetch);
+            """),
+
+        // Phase 3 adds the FTS5 table here as version 2.
+    ];
+
+    /// <summary>Gets the newest schema version this build knows.</summary>
+    internal static int Latest => All[^1].Version;
+
+    /// <summary>Brings the database up to <see cref="Latest"/>; returns the version it ends at.</summary>
+    internal static async Task<int> MigrateAsync(
+        SqliteConnection connection,
+        DateTimeOffset now,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        await using (var create = connection.CreateCommand())
+        {
+            create.CommandText =
+                "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);";
+            await create.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        int current;
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = "SELECT COALESCE(MAX(version), 0) FROM schema_version;";
+            current = Convert.ToInt32(
+                await read.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        }
+
+        if (current > Latest)
+        {
+            // A newer plugin wrote this file and was then downgraded. Don't guess at its schema.
+            throw new InvalidOperationException(
+                $"KasuMeta database is at schema {current}, newer than this plugin's {Latest}. Install a newer KasuMeta.");
+        }
+
+        foreach (var (version, sql) in All.Where(m => m.Version > current))
+        {
+            var transaction = (SqliteTransaction)await connection
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                await using (var migrate = connection.CreateCommand())
+                {
+                    migrate.Transaction = transaction;
+                    migrate.CommandText = sql;
+                    await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                await using (var record = connection.CreateCommand())
+                {
+                    record.Transaction = transaction;
+                    record.CommandText = "INSERT INTO schema_version (version, applied_at) VALUES ($v, $t);";
+                    record.Parameters.AddWithValue("$v", version);
+                    record.Parameters.AddWithValue("$t", now.ToUnixTimeSeconds());
+                    await record.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            StoreLog.Migrated(logger, version);
+        }
+
+        return Latest;
+    }
+}

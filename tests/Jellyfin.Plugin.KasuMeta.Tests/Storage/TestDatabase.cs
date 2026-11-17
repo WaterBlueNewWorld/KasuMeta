@@ -1,0 +1,58 @@
+using Jellyfin.Plugin.KasuMeta.Storage;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Jellyfin.Plugin.KasuMeta.Tests.Storage;
+
+/// <summary>A clock the tests move by hand.</summary>
+internal sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
+{
+    public DateTimeOffset Now { get; set; } = start;
+
+    public override DateTimeOffset GetUtcNow() => Now;
+}
+
+/// <summary>A fresh database file in a temp folder, deleted afterwards.</summary>
+internal sealed class TestDatabase : IDisposable
+{
+    private readonly string _folder;
+
+    public TestDatabase()
+    {
+        _folder = Path.Combine(Path.GetTempPath(), "kasumeta-tests", Guid.NewGuid().ToString("N"));
+        DbPath = Path.Combine(_folder, "nested", "kasumeta.db");
+        Time = new ManualTimeProvider(new DateTimeOffset(2026, 11, 16, 12, 0, 0, TimeSpan.Zero));
+        Database = new KasuMetaDatabase(DbPath, Time, NullLogger<KasuMetaDatabase>.Instance);
+        Store = new SqliteLocalizedMetadataStore(Database, Time);
+    }
+
+    public string DbPath { get; }
+
+    public ManualTimeProvider Time { get; }
+
+    public KasuMetaDatabase Database { get; }
+
+    public SqliteLocalizedMetadataStore Store { get; }
+
+    public async Task<object?> ScalarAsync(string sql)
+    {
+        await using var connection = await Database.OpenAsync(CancellationToken.None);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return await command.ExecuteScalarAsync();
+    }
+
+    public void Dispose()
+    {
+        Database.Dispose();
+        SqliteConnection.ClearAllPools();
+        try
+        {
+            Directory.Delete(_folder, recursive: true);
+        }
+        catch (IOException)
+        {
+            // A pooled handle in a parallel test; the OS temp cleanup gets it.
+        }
+    }
+}

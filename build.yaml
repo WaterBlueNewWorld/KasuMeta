@@ -1,0 +1,16 @@
+# Manifest for jprm (Jellyfin Plugin Repository Manager): `jprm plugin build .`
+name: "KasuMeta"
+guid: "703b8e8e-7d16-40bd-8f92-87fad8b741ae"
+version: "0.0.1.0"
+targetAbi: "12.0.0.0"
+framework: "net10.0"
+owner: "the client app"
+overview: "Localized titles, overviews and artwork for the client app"
+description: >
+  Stores localized metadata beside Jellyfin (its own SQLite file) and serves it
+  to the client app through /KasuMeta endpoints. Stock clients are unaffected.
+category: "Metadata"
+artifacts:
+  - "Jellyfin.Plugin.KasuMeta.dll"
+changelog: >
+  0.0.1: Phase 0 spike, GET /KasuMeta/Info. Requires Jellyfin 12.x.

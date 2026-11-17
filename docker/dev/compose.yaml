@@ -1,0 +1,53 @@
+# Jellyfin 12.1 for KasuMeta development (production runs 12.1).
+#
+#   dotnet build -c Release
+#   docker compose -f docker/dev/compose.yaml up -d
+#   bash scripts/dev-server-setup.sh          # first run: wizard, admin, libraries, scan
+#   docker restart kasumeta-jellyfin          # after each rebuild; plugins load at start
+#
+# Kept apart from the client's dev server (10.11.11, port 8096) on purpose: pointing that
+# container at 12.x would migrate its config volume one way. This one has its own volumes
+# and port, and borrows the client's test media read-only.
+# Clean slate: docker compose -f docker/dev/compose.yaml down -v
+name: kasumeta-dev
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:12.1
+    container_name: kasumeta-jellyfin
+    ports:
+      - "8097:8096"
+    # Jellyfin writes meta.json into each plugin folder, so the build can't be mounted there
+    # read-only. Copy it in on every start instead: a restart picks up the latest build.
+    # meta.json is dropped too, so a plugin marked "Malfunctioned" by an earlier bad build
+    # gets loaded again (dev only; it also forgets a Disabled state).
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        dest=/config/plugins/KasuMeta_0.0.1.0
+        mkdir -p "$$dest"
+        rm -f "$$dest"/*
+        cp /kasumeta-build/Jellyfin.Plugin.KasuMeta.dll /kasumeta-build/Jellyfin.Plugin.KasuMeta.pdb "$$dest"/
+        exec /jellyfin/jellyfin
+    volumes:
+      - kasumeta-config:/config
+      - kasumeta-cache:/cache
+      # The plugin build output (relative to this file), copied in by the entrypoint.
+      - ../../src/Jellyfin.Plugin.KasuMeta/bin/Release/net10.0:/kasumeta-build:ro
+      # the client's test media. Override with TEST_MEDIA_DIR if the repo lives elsewhere.
+      - ${TEST_MEDIA_DIR:-../../test-media}:/media:ro
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8096/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  kasumeta-config:
+  kasumeta-cache:
