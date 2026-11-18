@@ -276,7 +276,7 @@ components:
       required: [Name, Version, ApiVersion, EnabledLocales, FallbackToBaseLanguage, Features]
       properties:
         Name: { type: string, example: KasuMeta }
-        Version: { type: string, example: 0.0.1.0 }
+        Version: { type: string, example: 1.0.0.0 }
         ApiVersion: { type: integer, example: 1 }
         EnabledLocales:
           type: array

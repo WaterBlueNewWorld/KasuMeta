@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Checks that every place naming the plugin version agrees:
-#   Directory.Build.props <Version>           0.1.0      (the assembly version, 0.1.0.0)
-#   build.yaml version                        "0.1.0.0"  (the catalog and the zip name)
-#   docker/dev/compose.yaml plugin folder     KasuMeta_0.1.0.0
-#   README.md install path                    KasuMeta_0.1.0.0
-# and, when a tag is given (the release workflow passes it), that the tag is v0.1.0.
+#   Directory.Build.props <Version>           1.0.0.0    (the assembly version)
+#   build.yaml version                        "1.0.0.0"  (the catalog and the zip name)
+#   docker/dev/compose.yaml plugin folder     KasuMeta_1.0.0.0
+#   README.md install path                    KasuMeta_1.0.0.0
+# and, when a tag is given (the release workflow passes it), that the tag is v1.0.0.
 #
-#   bash scripts/check-version.sh [v0.1.0]
+#   bash scripts/check-version.sh [v1.0.0]
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

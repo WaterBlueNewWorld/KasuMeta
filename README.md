@@ -47,7 +47,7 @@ Jellyfin 10.11 and older can't load the plugin: Jellyfin 12 moved to .NET 10.
 **By hand:**
 
 1. Build the plugin (see [Building](#building)), or take the zip from a release.
-2. Copy `Jellyfin.Plugin.KasuMeta.dll` into `<jellyfin config>/plugins/KasuMeta_0.0.1.0/`.
+2. Copy `Jellyfin.Plugin.KasuMeta.dll` into `<jellyfin config>/plugins/KasuMeta_1.0.0.0/`.
 3. Restart Jellyfin. KasuMeta appears under Dashboard › Plugins.
 
 ## Configuration
@@ -147,9 +147,8 @@ Before the first release, enable GitHub Pages once: Settings › Pages › Deplo
 
 ## Status
 
-Pre-release (0.0.1). Done and verified on a live Jellyfin 12.1 server: localized text, images,
-search, manual overrides, AniList titles and the status panel. CI runs on every push; the
-first release will publish the plugin repository.
+1.0.0, the first release: localized text, images, search, manual overrides, AniList titles
+and the status panel, verified on a live Jellyfin 12.1 server. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Attribution
 
