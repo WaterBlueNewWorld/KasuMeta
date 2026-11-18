@@ -142,8 +142,9 @@ To release, for example 0.1.0:
    publishes a GitHub release with the zip, and adds the version to `manifest.json` on the
    `gh-pages` branch.
 
-Before the first release, enable GitHub Pages once: Settings › Pages › Deploy from a branch ›
-`gh-pages`, `/ (root)`.
+After the first release, enable GitHub Pages once: Settings › Pages › Deploy from a branch ›
+`gh-pages`, `/ (root)`. The first release workflow creates that branch, and GitHub only offers
+existing branches.
 
 ## Status
 

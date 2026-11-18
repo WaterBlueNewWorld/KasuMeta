@@ -5,7 +5,8 @@ name: Release
 #   2. a GitHub release is created with the plugin zip;
 #   3. manifest.json on the gh-pages branch gains the version, so Jellyfin servers using
 #      https://<owner>.github.io/<repo>/manifest.json as a plugin repository offer it.
-# One-time setup: Settings > Pages > Deploy from a branch > gh-pages, / (root).
+# One-time setup after the first release (which creates gh-pages):
+# Settings > Pages > Deploy from a branch > gh-pages, / (root).
 
 on:
   push:
