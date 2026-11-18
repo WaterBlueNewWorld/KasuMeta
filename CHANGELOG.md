@@ -6,9 +6,14 @@ the release's three parts plus `.0` (release 1.0.0 is plugin version 1.0.0.0).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-18
+
+Requires **Jellyfin 12.x** (built against 12.0, tested on 12.0 and 12.1). KasuMeta has **no
+effect on Jellyfin's stock UI**: it serves frontends that call its API, such as KasuVideo.
+
 Database schema 4 (applied on start; there's no way back to 1.1 without restoring a backup). The
 library is fetched once more after the upgrade, for the new genres, tags and original-language
-values.
+values. Until the plugin page is saved, the 1.1 provider settings keep deciding.
 
 ### Added
 - **Sources per field:** titles, overviews, taglines, genres, tags, posters, logos and backdrops

@@ -4,7 +4,7 @@
 # shows for this version: rewrite it for every release.
 name: "KasuMeta"
 guid: "703b8e8e-7d16-40bd-8f92-87fad8b741ae"
-version: "1.1.0.0"
+version: "1.2.0.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 owner: "WaterBlueNewWorld"
@@ -23,7 +23,10 @@ category: "Metadata"
 artifacts:
   - "Jellyfin.Plugin.KasuMeta.dll"
 changelog: >
-  1.1.0: TVDB as a metadata provider (API v4 key, plus PIN for user-supported
-  keys). Choose TMDB only (the default, as before), TVDB only, or both with a
-  priority weight each: per field, image and language the higher weight wins
-  and the other fills the gaps. Changing the choice fetches the library again.
+  1.2.0: choose the providers of each field (titles, overviews, taglines,
+  genres, tags, posters, logos, backdrops) in order; the next ones fill what the
+  first lacks. Fields with nothing in the reader's language fall back to the
+  title's original language. Genres and tags, with a dictionary to translate
+  English terms library-wide. Image uploads (up to 10 MB) as overrides. No
+  effect on Jellyfin's stock UI: for frontends using the KasuMeta API. The
+  library is fetched again once after updating.
