@@ -2,11 +2,19 @@
     {
         "guid": "703b8e8e-7d16-40bd-8f92-87fad8b741ae",
         "name": "KasuMeta",
-        "description": "Stores localized metadata beside Jellyfin (its own SQLite file) and serves it to client apps through /KasuMeta endpoints: titles, overviews, taglines and artwork per locale from TMDB, TVDB or both (by priority weight), anime titles from AniList, search by localized name, and admin overrides. Stock clients are unaffected. Requires Jellyfin 12.x and a TMDB or TVDB API key.\n",
-        "overview": "Localized titles, overviews and artwork for every user's language",
+        "description": "Note: this plugin has no effect on Jellyfin's stock UI. It is made for other frontends to consume: the localized metadata is only served through its own /KasuMeta API, which a client app must call itself. Jellyfin's web client and official apps keep showing the library's own metadata. Stores localized metadata beside Jellyfin (its own SQLite file): titles, overviews, taglines, genres, tags and artwork per locale from TMDB, TVDB and AniList, chosen per field, with an original-language fallback, search by localized name, and admin overrides and image uploads. Requires Jellyfin 12.x and a TMDB or TVDB API key.\n",
+        "overview": "Localized titles, overviews and artwork for other frontends (no effect on Jellyfin's stock UI)",
         "owner": "WaterBlueNewWorld",
         "category": "Metadata",
         "versions": [
+            {
+                "version": "1.2.0.0",
+                "changelog": "1.2.0: choose the providers of each field (titles, overviews, taglines, genres, tags, posters, logos, backdrops) in order; the next ones fill what the first lacks. Fields with nothing in the reader's language fall back to the title's original language. Genres and tags, with a dictionary to translate English terms library-wide. Image uploads (up to 10 MB) as overrides. No effect on Jellyfin's stock UI: for frontends using the KasuMeta API. The library is fetched again once after updating.\n",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/WaterBlueNewWorld/KasuMeta/releases/download/v1.2.0/kasumeta_1.2.0.0.zip",
+                "checksum": "1a1b1becc846b659b2b4048c6294b8ac",
+                "timestamp": "2026-11-18T20:17:08Z"
+            },
             {
                 "version": "1.1.0.0",
                 "changelog": "1.1.0: TVDB as a metadata provider (API v4 key, plus PIN for user-supported keys). Choose TMDB only (the default, as before), TVDB only, or both with a priority weight each: per field, image and language the higher weight wins and the other fills the gaps. Changing the choice fetches the library again.\n",
