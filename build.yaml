@@ -4,11 +4,11 @@ guid: "703b8e8e-7d16-40bd-8f92-87fad8b741ae"
 version: "0.0.1.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
-owner: "the client app"
-overview: "Localized titles, overviews and artwork for the client app"
+owner: "WaterBlueNewWorld"
+overview: "Localized titles, overviews and artwork for every user's language"
 description: >
   Stores localized metadata beside Jellyfin (its own SQLite file) and serves it
-  to the client app through /KasuMeta endpoints. Stock clients are unaffected.
+  to client apps through /KasuMeta endpoints. Stock clients are unaffected.
 category: "Metadata"
 artifacts:
   - "Jellyfin.Plugin.KasuMeta.dll"

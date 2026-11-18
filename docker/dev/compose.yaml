@@ -5,9 +5,10 @@
 #   bash scripts/dev-server-setup.sh          # first run: wizard, admin, libraries, scan
 #   docker restart kasumeta-jellyfin          # after each rebuild; plugins load at start
 #
-# Kept apart from the client's dev server (10.11.11, port 8096) on purpose: pointing that
-# container at 12.x would migrate its config volume one way. This one has its own volumes
-# and port, and borrows the client's test media read-only.
+# Port 8097, with its own volumes, so it can run beside another Jellyfin dev server: never
+# point an older server's config volume at 12.x, which migrates it one way. Test media is
+# mounted read-only from TEST_MEDIA_DIR (default: test-media/ at the repo root, git-ignored);
+# set it in docker/dev/.env or the shell to use a folder elsewhere.
 # Clean slate: docker compose -f docker/dev/compose.yaml down -v
 name: kasumeta-dev
 
@@ -36,7 +37,7 @@ services:
       - kasumeta-cache:/cache
       # The plugin build output (relative to this file), copied in by the entrypoint.
       - ../../src/Jellyfin.Plugin.KasuMeta/bin/Release/net10.0:/kasumeta-build:ro
-      # the client's test media. Override with TEST_MEDIA_DIR if the repo lives elsewhere.
+      # Test media: a Movies and a Shows folder (see scripts/dev-server-setup.sh).
       - ${TEST_MEDIA_DIR:-../../test-media}:/media:ro
     environment:
       - TZ=UTC

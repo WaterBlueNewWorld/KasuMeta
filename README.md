@@ -1,101 +1,130 @@
 # KasuMeta
 
-A Jellyfin plugin that serves localized titles, overviews and artwork to
-client apps, so each user sees metadata in their own language.
-It keeps its own SQLite store beside Jellyfin and never writes to Jellyfin's database.
+A Jellyfin plugin that serves localized titles, overviews, taglines and artwork, so each user
+of a client app can see metadata in their own language instead of the one the library was
+scanned in.
+
+Jellyfin stores one set of metadata per item, in the server's language. KasuMeta keeps
+translations beside it, in its own SQLite file, and serves them through its own API. It never
+writes to Jellyfin's database or metadata fields, so stock clients behave exactly as before, and
+removing the plugin leaves the server as it was.
+
+## Features
+
+- **Titles, overviews and taglines per locale** from TMDB, fetched once per item whatever the
+  number of languages, and kept up to date as the library changes.
+- **Localized artwork:** posters, logos and backdrops per language and region (a Mexican poster
+  is not a Spanish one).
+- **Fallback per field:** `es-MX` falls back to `es-ES` when TMDB has a Spanish overview but no
+  Mexican one. Scripts never stand in for each other: Traditional and Simplified Chinese stay
+  apart, and so do romaji (`ja-Latn`) and Japanese script.
+- **Search by localized name**, in any stored language: "cabana del terror" or "キャビン" finds
+  *The Cabin in the Woods*. Case and accents are ignored, and Chinese, Japanese, Korean and Thai
+  text matches anywhere in a title.
+- **Anime titles from AniList** for items with an AniList id: English, native and romaji titles
+  where TMDB has none. Romaji is always searchable.
+- **Manual overrides:** administrators can set and lock titles, overviews and images per
+  locale, which provider refreshes never replace.
+- **Respects library access:** users only ever see, or find, items they're allowed to see.
 
 ## Compatibility
 
-| Component | Jellyfin server |
+| | |
 |---|---|
-| **the client app** (the app) | **10.11.x or higher** |
-| **KasuMeta** (this plugin: multi-locale metadata) | **12.x only** (production runs 12.1) |
+| Jellyfin | **12.x** (built against 12.0, tested on 12.0, 12.1 and 12.4) |
+| .NET | 10, as Jellyfin 12 |
 
-- **KasuMeta is optional.** On a server without it, the client app works as before: it shows
-  metadata in the server's language, the way stock Jellyfin does.
-- **Server versions:** on 10.11 servers the plugin can't be installed, because Jellyfin 12
-  moved to .NET 10.
-- **Build:** the plugin is built against Jellyfin **12.0.0** (`targetAbi 12.0.0.0`), so one DLL
-  loads on any 12.x server. It has been checked against 12.1.0 and 12.4.0.
+Jellyfin 10.11 and older can't load the plugin: Jellyfin 12 moved to .NET 10.
 
-## Why a server plugin
+## Installation
 
-the client app avoids changes to the Jellyfin backend, and has turned down a server plugin before
-(for user preferences and the colour scheme). This is a deliberate exception:
-- Per-user, multi-locale metadata needs shared storage on the server.
-- Provider API keys must never ship in the app.
+Until a plugin repository is published, install by hand:
 
-A plugin is the safest way to meet both:
-- It leaves Jellyfin's own database and metadata fields untouched.
-- It can be removed at any time.
-- Without it, the app falls back to stock data.
+1. Build the plugin (see [Building](#building)), or download the DLL from a release.
+2. Copy `Jellyfin.Plugin.KasuMeta.dll` into `<jellyfin config>/plugins/KasuMeta_0.0.1.0/`.
+3. Restart Jellyfin. KasuMeta appears under Dashboard › Plugins.
 
-## Build
+## Configuration
+
+Dashboard › Plugins › KasuMeta:
+
+| Setting | |
+|---|---|
+| Enabled locales | BCP-47 codes, e.g. `en-US, es-MX, ja-JP`. Translations are kept for these locales and their fallbacks. |
+| Fall back to the base language | Lets `es-MX` be answered with `es` or `es-ES`. |
+| TMDB API key | A v3 key or a v4 read access token. Required. It stays on the server; clients never see it. |
+| Anime titles from AniList | On by default; needs no key. Items need an AniList id, as set by Jellyfin's AniList metadata plugin or by hand under the item's External IDs. |
+| Refresh interval | How old a translation may get before it's fetched again. |
+
+After the key is set, the "Fetch missing translations" task fetches the whole library: one
+TMDB request per item, at most 20 a second. AniList allows 30 requests a minute, so anime
+take longer.
+
+## API
+
+All routes sit behind Jellyfin's own authentication: send the token your client already uses.
+JSON is PascalCase, as everywhere in Jellyfin, and empty fields are left out. The contract is
+[`api/openapi.yaml`](api/openapi.yaml), with example responses captured from a live server in
+[`api/fixtures`](api/fixtures).
+
+| Route | Use |
+|---|---|
+| `GET /KasuMeta/Info` | Capability check: a 404 means the plugin isn't installed |
+| `POST /KasuMeta/Items/Batch` | Titles, overviews, taglines and images for up to 200 items (one call per grid page) |
+| `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's localized data (detail page) |
+| `GET /KasuMeta/Search?q=cabana&locale=es-MX` | Find items by their localized names |
+| `GET /KasuMeta/Items/{itemId}/All` | Admin: every stored locale of an item, with sources, locks and fetch state |
+| `PUT /KasuMeta/Items/{itemId}/{locale}` | Admin: set (and lock) or remove manual values |
+| `POST /KasuMeta/Items/{itemId}/Refresh` | Admin: re-fetch an item from its providers |
+
+How a client uses it:
+1. Call `Info` after sign-in. If it's a 404, keep to Jellyfin's own fields. `Info.Features`
+   (`text`, `images`, `search`, `overrides`) says what this build serves.
+2. Load items from Jellyfin as usual, then ask `Items/Batch` for the same ids in the user's
+   locale, and show the localized values where there are some. `ResolvedLocale` says which
+   locale each value really came from.
+3. Search with `Search` beside Jellyfin's own search, and fetch the returned ids from Jellyfin.
+
+The admin routes need an administrator's token or an API key. A manual value is locked by
+default. Sending `null` for a field removes it, and the provider's value comes back on the
+re-fetch that follows.
+
+## Building
 
 Requires the .NET 10 SDK.
 
 ```sh
 dotnet test                                  # build + unit tests (against Jellyfin 12.0.0)
-dotnet test -p:JellyfinVersion=12.1.0        # check against another 12.x line
+dotnet test -p:JellyfinVersion=12.1.0        # check against another 12.x release
 dotnet build -c Release                      # → src/Jellyfin.Plugin.KasuMeta/bin/Release/net10.0/Jellyfin.Plugin.KasuMeta.dll
 ```
 
-To install by hand, copy the DLL to `<jellyfin config>/plugins/KasuMeta_0.0.1.0/` and restart
-the server.
+### Local dev server
 
-To run a local 12.1 dev server with the plugin installed, use port 8097. It runs separately from
-the client's 10.11 dev server.
+[`docker/dev/compose.yaml`](docker/dev/compose.yaml) runs a Jellyfin 12.1 server on port 8097
+with the Release build installed, and the scripts drive it:
 
 ```sh
 dotnet build -c Release
 docker compose -f docker/dev/compose.yaml up -d
 bash scripts/dev-server-setup.sh     # first run: wizard, users, libraries; writes .env (git-ignored)
 bash scripts/smoke-test.sh           # live checks: plugin loaded, database, auth
-bash scripts/dev-anilist-setup.sh    # once, after the scan: AniList ids for the anime series
-bash scripts/e2e-test.sh             # live checks (needs a TMDB key on the plugin page)
+bash scripts/dev-anilist-setup.sh    # once, after the scan: AniList ids for the anime test series
+bash scripts/e2e-test.sh             # live end-to-end checks (needs a TMDB key on the plugin page)
 docker restart kasumeta-jellyfin     # after each rebuild
 ```
 
-## API
-
-All routes sit behind Jellyfin's own sign-in. JSON is PascalCase, as Jellyfin serializes, and
-null fields are left out. The contract is [`api/openapi.yaml`](api/openapi.yaml), with examples
-captured from a live server in [`api/fixtures`](api/fixtures).
-
-| Route | Use |
-|---|---|
-| `GET /KasuMeta/Info` | Capability check after sign-in (404 = plugin not installed) |
-| `POST /KasuMeta/Items/Batch` | Localized titles, overviews, taglines and images for up to 200 items (one call per grid page) |
-| `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's overlay (detail page) |
-| `GET /KasuMeta/Search?q=cabana&locale=es-MX` | Find items by their localized names, in any enabled language |
-| `GET /KasuMeta/Items/{itemId}/All` | Admin: every stored locale of an item, with sources, locks and fetch state |
-| `PUT /KasuMeta/Items/{itemId}/{locale}` | Admin: set (and lock) or remove manual values |
-| `POST /KasuMeta/Items/{itemId}/Refresh` | Admin: re-fetch an item from its providers |
-
-Search ignores case and accents, treats the last word as a prefix, and matches Chinese, Japanese,
-Korean and Thai text anywhere in a title. It returns ids; the app fetches the items from Jellyfin.
-
-Titles come from TMDB. Anime with an AniList id (set by Jellyfin's AniList metadata plugin, or by
-hand under the item's External IDs) also get AniList's titles where TMDB has none. Their romaji
-title is always stored as `ja-Latn`, so search finds "mahou shoujo" from any language, but it is
-only served to a client that asks for `ja-Latn`: romaji and Japanese script never stand in for
-each other.
-
-The admin routes need an administrator's token or an API key. A manual value is locked by
-default: provider refreshes never replace it. Sending `null` for a field removes it and
-re-fetches, so the provider's value comes back.
-
-`Info.Features` lists what a given plugin build serves (`text`, `images`, `search`, `overrides`).
-
 ## Status
 
-- **Done:**
-  - Phase 0: `GET /KasuMeta/Info` and the configuration page work.
-  - Phase 1, the read path: store, locale fallback, TMDB client, fetch queue and worker,
-    library hooks, scheduled tasks, and the batch and item endpoints.
-  - Phase 2: localized posters, logos and backdrops per locale.
-  - Phase 3: search over localized titles.
-  - Phase 4: manual overrides (edit, lock, remove, refresh) and anime titles from AniList.
-  - Verified live on Jellyfin 12.1.
-- **Next:** Phase 5, hardening and distribution (CI, a plugin repository manifest).
-- **Not supported yet:** Jellyfin 10.11. It's kept as a future option.
+Pre-release (0.0.1). Done and verified on a live Jellyfin 12.1 server: localized text, images,
+search, manual overrides and AniList titles. Next: continuous integration, releases and a
+plugin repository for one-click installs from the dashboard.
+
+## Attribution
+
+This product uses the TMDB API but is not endorsed or certified by TMDB. Anime titles come from
+[AniList](https://anilist.co).
+
+## License
+
+[GPL-3.0](LICENSE), like Jellyfin and its official plugins.

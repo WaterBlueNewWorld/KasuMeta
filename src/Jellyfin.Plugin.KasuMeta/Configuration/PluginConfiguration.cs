@@ -9,8 +9,8 @@ namespace Jellyfin.Plugin.KasuMeta.Configuration;
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
-    /// Gets or sets the BCP-47 locales to fetch and serve. The defaults are the UI languages
-    /// the client app ships (lib/l10n/l10n.dart: en, es, es_MX, ja, zh), spelled as TMDB expects them.
+    /// Gets or sets the BCP-47 locales to fetch and serve. The defaults cover English, Spanish
+    /// (Spain and Mexico), Japanese and Simplified Chinese, spelled as TMDB expects them.
     /// </summary>
 #pragma warning disable CA1819 // Jellyfin's XML serializer needs a settable array.
     public string[] EnabledLocales { get; set; } = ["en-US", "es-ES", "es-MX", "ja-JP", "zh-CN"];

@@ -26,7 +26,7 @@
   <ItemGroup>
     <!-- Real provider responses recorded from the dev server's key; see Fixtures/README.md. -->
     <None Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
-    <!-- The API contract's live-captured examples, shared with the client app. -->
+    <!-- The API contract's live-captured examples, also usable by client tests. -->
     <None Include="..\..\api\fixtures\*.json" Link="Contract\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\api\openapi.yaml" Link="Contract\openapi.yaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

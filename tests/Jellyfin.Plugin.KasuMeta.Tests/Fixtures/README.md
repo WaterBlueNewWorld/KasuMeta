@@ -1,7 +1,7 @@
 # Test fixtures
 
 Real responses, recorded on 2026-11-17 with the dev server's TMDB Read Access Token, for the
-titles in the client's `test-media/`. Tests replay them through a fake HTTP handler; no test
+titles in the dev server's test media. Tests replay them through a fake HTTP handler; no test
 calls the network.
 
 `Q` below is the query the client sends for the default enabled locales:

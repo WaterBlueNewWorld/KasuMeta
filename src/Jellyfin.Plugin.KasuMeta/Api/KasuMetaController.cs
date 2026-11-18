@@ -14,7 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.KasuMeta.Api;
 
 /// <summary>
-/// KasuMeta's HTTP API. Every route sits behind Jellyfin's own auth, so the client app sends the
+/// KasuMeta's HTTP API. Every route sits behind Jellyfin's own auth, so a client sends the
 /// token it already has. Contract: api/openapi.yaml (PascalCase, as Jellyfin serializes).
 /// </summary>
 [ApiController]
@@ -86,7 +86,7 @@ public class KasuMetaController : ControllerBase
     }
 
     /// <summary>
-    /// Capability check: the client app calls this after sign-in. A 404 means the plugin isn't installed,
+    /// Capability check: a client calls this after sign-in. A 404 means the plugin isn't installed,
     /// and the app keeps to stock Jellyfin fields.
     /// </summary>
     /// <response code="200">The plugin is installed and these locales are served.</response>

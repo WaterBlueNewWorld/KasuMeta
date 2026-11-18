@@ -8,7 +8,7 @@ using MediaBrowser.Model.Serialization;
 namespace Jellyfin.Plugin.KasuMeta;
 
 /// <summary>
-/// KasuMeta: localized metadata (titles, overviews, artwork) for the client app,
+/// KasuMeta: localized metadata (titles, overviews, artwork) for Jellyfin client apps,
 /// stored beside Jellyfin rather than inside it.
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
@@ -32,7 +32,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => PluginId;
 
     /// <inheritdoc />
-    public override string Description => "Localized titles, overviews and artwork for the client app.";
+    public override string Description => "Localized titles, overviews and artwork for every user's language.";
 
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()

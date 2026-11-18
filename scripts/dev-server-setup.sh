@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # First-run setup for KasuMeta's Jellyfin 12.1 dev server (docker/dev/compose.yaml).
-# Modeled on the client's scripts/dev-server-setup.sh, with its own credentials and port.
 #
 # Drives /Startup so nobody clicks through the wizard, then makes sure the two test libraries
-# exist (over the client's test-media) and starts a scan. Safe to re-run: each step checks first.
+# exist (over the mounted test media) and starts a scan. Safe to re-run: each step checks first.
 #
 # Reads .env at the repo root, creating it with random passwords on the first run (git-ignored).
 # Needs: bash, curl, sed (Git Bash on Windows works).

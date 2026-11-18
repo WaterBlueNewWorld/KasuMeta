@@ -3,9 +3,9 @@ info:
   title: KasuMeta
   version: "1"
   description: |
-    Localized metadata for the client app, served by the KasuMeta Jellyfin plugin (Jellyfin 12.x).
+    Localized metadata for Jellyfin client apps, served by the KasuMeta plugin (Jellyfin 12.x).
 
-    - **Auth:** Jellyfin's own. Send the header the client app already sends:
+    - **Auth:** Jellyfin's own. Send the header the client already sends:
       `Authorization: MediaBrowser Client="…", Device="…", DeviceId="…", Version="…", Token="…"`.
       No token → 401.
     - **Casing:** PascalCase, as Jellyfin serializes everything. Request bodies bind
@@ -47,7 +47,7 @@ info:
       When it's `Locked`, provider refreshes never replace it. It's served through the read
       routes and found by search like any other value.
     - **Examples:** `api/fixtures/*.json` were captured from a live Jellyfin 12.1 server and are
-      checked by the plugin's tests; the client's tests can use the same files.
+      checked by the plugin's tests; client tests can use the same files.
 servers:
   - url: http://localhost:8097
     description: KasuMeta dev server (docker/dev/compose.yaml)
