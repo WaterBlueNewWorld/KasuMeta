@@ -112,6 +112,23 @@ public sealed class OriginalLanguageOverlayTests : IDisposable
     }
 
     [Fact]
+    public async Task The_dictionary_fills_english_names_a_provider_left_in_a_localized_list()
+    {
+        await Seed(
+            "ja",
+            new LocalizedField(Id, "es-MX", MetadataFields.Genres, ListValues.Serialize(["Animación", "Sci-Fi & Fantasy"])!, MetadataSources.Tmdb),
+            new LocalizedField(Id, "es-MX", MetadataFields.Tags, ListValues.Serialize(["Sci-Fi & Fantasy"])!, MetadataSources.Manual));
+        await _terms.SetAsync(TermKinds.Genre, "es", new Dictionary<string, string?> { ["sci-fi & fantasy"] = "Ciencia ficción y fantasía" }, None);
+        await _terms.SetAsync(TermKinds.Tag, "es", new Dictionary<string, string?> { ["Sci-Fi & Fantasy"] = "Ciencia ficción y fantasía" }, None);
+
+        var overlay = await Overlay("es-MX");
+
+        Assert.Equal(["Animación", "Ciencia ficción y fantasía"], overlay!.Genres!.Values);
+        Assert.Equal((MetadataSources.Dictionary, "es-MX"), (overlay.Genres.Source, overlay.Genres.ResolvedLocale));
+        Assert.Equal(["Sci-Fi & Fantasy"], overlay.Tags!.Values); // an admin's list is left alone
+    }
+
+    [Fact]
     public async Task English_readers_get_the_base_terms_as_they_are()
     {
         await Seed("ja", new LocalizedField(Id, "en", MetadataFields.Tags, ListValues.Serialize(["Elf"])!, MetadataSources.Tvdb));

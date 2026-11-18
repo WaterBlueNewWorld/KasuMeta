@@ -449,14 +449,17 @@ public class KasuMetaController : ControllerBase
     /// of one item, locale and type, replacing the stored one (provider, URL or file). The file's
     /// format is checked by its content; its size is read from its header.
     /// </summary>
+    /// <remarks>
+    /// The form is read here rather than bound, so that a body over the limit answers 413 (model
+    /// binding would turn it into a validation 400). Its parts: <c>file</c>, the image; and
+    /// <c>locked</c>, whether provider refreshes must leave the image alone (default true).
+    /// </remarks>
     /// <param name="itemId">The item.</param>
     /// <param name="locale">The locale the image is for.</param>
     /// <param name="imageType">Primary, Logo, Backdrop or Thumb (any casing).</param>
-    /// <param name="file">The multipart form's <c>file</c> part.</param>
-    /// <param name="locked">The form's <c>locked</c> field: whether provider refreshes must leave the image alone. Default true.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     /// <response code="200">Stored; the body is the item's admin view after the change.</response>
-    /// <response code="400">Bad locale or image type, no file, or not a JPEG, PNG, WebP or GIF.</response>
+    /// <response code="400">Bad locale or image type, a malformed form, no file, or not a JPEG, PNG, WebP or GIF.</response>
     /// <response code="403">Not an administrator.</response>
     /// <response code="404">No such item in the library.</response>
     /// <response code="413">The file is larger than 10 MiB.</response>
@@ -465,6 +468,7 @@ public class KasuMetaController : ControllerBase
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxUploadBytes + MultipartOverhead)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes + MultipartOverhead)]
+    [DisableFormValueModelBinding]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -474,8 +478,44 @@ public class KasuMetaController : ControllerBase
         [FromRoute] Guid itemId,
         [FromRoute] string locale,
         [FromRoute] string imageType,
+        CancellationToken cancellationToken)
+    {
+        if (Request.ContentLength > MaxUploadBytes + MultipartOverhead)
+        {
+            return TooLarge();
+        }
+
+        IFormCollection form;
+        try
+        {
+            form = await Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            // A chunked body (no Content-Length) that ran past the limit.
+            return TooLarge();
+        }
+        catch (InvalidDataException ex)
+        {
+            // The form reader's own limits ("Multipart body length limit … exceeded") or a broken body.
+            return ex.Message.Contains("limit", StringComparison.OrdinalIgnoreCase)
+                   || ex.Message.Contains("too large", StringComparison.OrdinalIgnoreCase)
+                ? TooLarge()
+                : BadRequest("The multipart form could not be read.");
+        }
+
+        bool? locked = bool.TryParse(form["locked"].ToString(), out var parsed) ? parsed : null;
+        return await StoreUploadAsync(itemId, locale, imageType, form.Files.GetFile("file"), locked, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Validates and stores an upload (<see cref="UploadImage"/> after the form is read).</summary>
+    internal async Task<ActionResult<ItemTranslations>> StoreUploadAsync(
+        Guid itemId,
+        string locale,
+        string imageType,
         IFormFile? file,
-        [FromForm] bool? locked,
+        bool? locked,
         CancellationToken cancellationToken)
     {
         if (!LocaleChain.TryNormalize(locale, out var normalized))
@@ -496,7 +536,7 @@ public class KasuMetaController : ControllerBase
 
         if (file.Length > MaxUploadBytes)
         {
-            return StatusCode(StatusCodes.Status413PayloadTooLarge, $"The image is larger than {MaxUploadBytes / (1024 * 1024)} MiB.");
+            return TooLarge();
         }
 
         if (_library.GetItem(itemId) is null)
@@ -528,6 +568,9 @@ public class KasuMetaController : ControllerBase
         await _store.SetUploadedImageAsync(image, data, cancellationToken).ConfigureAwait(false);
         return await _overlays.BuildAllLocalesAsync(itemId, cancellationToken).ConfigureAwait(false);
     }
+
+    private ObjectResult TooLarge() =>
+        StatusCode(StatusCodes.Status413PayloadTooLarge, $"The image is larger than {MaxUploadBytes / (1024 * 1024)} MiB.");
 
     /// <summary>
     /// An uploaded localized image file, for anyone who may see the item. Overlays point here

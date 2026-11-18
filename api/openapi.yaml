@@ -256,7 +256,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ItemTranslations" }
         "400":
-          description: Bad locale or image type, no `file` part, or not a JPEG, PNG, WebP or GIF. The body is a message string.
+          description: Bad locale or image type, a malformed form, no `file` part, or not a JPEG, PNG, WebP or GIF. The body is a message string.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/NotAdmin" }
         "404":
@@ -523,7 +523,10 @@ components:
         Source:
           type: string
           enum: [tmdb, tvdb, anilist, manual, dictionary]
-          description: "`dictionary`: the providers' English terms translated by the admin's dictionary; terms it lacks stay in English."
+          description: >
+            `dictionary`: the admin's dictionary translated some of the terms: the providers'
+            English list, or English names a provider left in a localized list (TMDB keeps
+            "Sci-Fi & Fantasy" in Spanish). Terms it lacks stay as they were.
         ResolvedLocale:
           type: string
           description: The stored locale served; differs from the request after a fallback.

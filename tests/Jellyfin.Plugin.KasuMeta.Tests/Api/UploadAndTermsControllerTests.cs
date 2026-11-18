@@ -46,7 +46,7 @@ public sealed class UploadAndTermsControllerTests : IDisposable
     {
         var png = Png(640, 960, 2_000);
 
-        var put = await Controller(apiKey: true).UploadImage(Visible, "es_mx", "logo", File(png), locked: null, None);
+        var put = await Controller(apiKey: true).StoreUploadAsync(Visible, "es_mx", "logo", File(png), locked: null, None);
 
         var logo = put.Value!.Locales["es-MX"].Images!["Logo"];
         Assert.True(logo.Uploaded);
@@ -66,7 +66,7 @@ public sealed class UploadAndTermsControllerTests : IDisposable
     [Fact]
     public async Task A_matching_etag_answers_not_modified()
     {
-        await Controller(apiKey: true).UploadImage(Visible, "es-MX", "Primary", File(Png(10, 10, 100)), locked: false, None);
+        await Controller(apiKey: true).StoreUploadAsync(Visible, "es-MX", "Primary", File(Png(10, 10, 100)), locked: false, None);
         var first = Controller(user: UserId);
         await first.GetUploadedImage(Visible, "es-MX", "Primary", None);
         var etag = first.Response.Headers.ETag.ToString();
@@ -80,7 +80,7 @@ public sealed class UploadAndTermsControllerTests : IDisposable
     [Fact]
     public async Task An_upload_the_caller_cannot_see_is_not_found()
     {
-        await Controller(apiKey: true).UploadImage(Restricted, "es-MX", "Logo", File(Png(10, 10, 100)), locked: null, None);
+        await Controller(apiKey: true).StoreUploadAsync(Restricted, "es-MX", "Logo", File(Png(10, 10, 100)), locked: null, None);
 
         Assert.IsType<NotFoundResult>(await Controller(user: UserId).GetUploadedImage(Restricted, "es-MX", "Logo", None));
         Assert.IsType<NotFoundResult>(await Controller(user: UserId).GetUploadedImage(Visible, "es-MX", "Logo", None));
@@ -89,10 +89,38 @@ public sealed class UploadAndTermsControllerTests : IDisposable
     [Fact]
     public async Task A_file_over_ten_megabytes_is_refused()
     {
-        var result = await Controller(apiKey: true).UploadImage(
+        var result = await Controller(apiKey: true).StoreUploadAsync(
             Visible, "es-MX", "Logo", File(Png(10, 10, KasuMetaController.MaxUploadBytes + 1)), locked: null, None);
 
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, Assert.IsType<ObjectResult>(result.Result).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_body_over_the_limit_is_refused_before_the_form_is_read()
+    {
+        var controller = Controller(apiKey: true);
+        controller.Request.ContentType = "multipart/form-data; boundary=x";
+        controller.Request.ContentLength = 11L * 1024 * 1024;
+
+        var result = await controller.UploadImage(Visible, "es-MX", "Logo", None);
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, Assert.IsType<ObjectResult>(result.Result).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_action_reads_the_file_and_locked_from_the_multipart_form()
+    {
+        using var content = new MultipartFormDataContent("kasumeta-boundary");
+        content.Add(new ByteArrayContent(Png(32, 16, 200)), "file", "logo.png");
+        content.Add(new StringContent("false"), "locked");
+        var controller = Controller(apiKey: true);
+        controller.Request.ContentType = content.Headers.ContentType!.ToString();
+        controller.Request.Body = new MemoryStream(await content.ReadAsByteArrayAsync());
+
+        var put = await controller.UploadImage(Visible, "es-MX", "Logo", None);
+
+        var logo = put.Value!.Locales["es-MX"].Images!["Logo"];
+        Assert.Equal((true, 32, false), (logo.Uploaded, logo.Width!.Value, logo.Locked));
     }
 
     [Theory]
@@ -100,7 +128,7 @@ public sealed class UploadAndTermsControllerTests : IDisposable
     [InlineData("not an image at all")]
     public async Task Anything_but_a_raster_image_is_refused(string content)
     {
-        var result = await Controller(apiKey: true).UploadImage(
+        var result = await Controller(apiKey: true).StoreUploadAsync(
             Visible, "es-MX", "Logo", File(System.Text.Encoding.UTF8.GetBytes(content)), locked: null, None);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
@@ -111,17 +139,17 @@ public sealed class UploadAndTermsControllerTests : IDisposable
     public async Task Bad_routes_and_unknown_items_are_refused()
     {
         var admin = Controller(apiKey: true);
-        Assert.IsType<BadRequestObjectResult>((await admin.UploadImage(Visible, "not a locale", "Logo", File(Png(1, 1, 50)), null, None)).Result);
-        Assert.IsType<BadRequestObjectResult>((await admin.UploadImage(Visible, "es-MX", "Banner", File(Png(1, 1, 50)), null, None)).Result);
-        Assert.IsType<BadRequestObjectResult>((await admin.UploadImage(Visible, "es-MX", "Logo", null, null, None)).Result);
-        Assert.IsType<NotFoundResult>((await admin.UploadImage(Guid.NewGuid(), "es-MX", "Logo", File(Png(1, 1, 50)), null, None)).Result);
+        Assert.IsType<BadRequestObjectResult>((await admin.StoreUploadAsync(Visible, "not a locale", "Logo", File(Png(1, 1, 50)), null, None)).Result);
+        Assert.IsType<BadRequestObjectResult>((await admin.StoreUploadAsync(Visible, "es-MX", "Banner", File(Png(1, 1, 50)), null, None)).Result);
+        Assert.IsType<BadRequestObjectResult>((await admin.StoreUploadAsync(Visible, "es-MX", "Logo", null, null, None)).Result);
+        Assert.IsType<NotFoundResult>((await admin.StoreUploadAsync(Guid.NewGuid(), "es-MX", "Logo", File(Png(1, 1, 50)), null, None)).Result);
     }
 
     [Fact]
     public async Task A_manual_url_replaces_an_upload_and_null_removes_it()
     {
         var admin = Controller(apiKey: true);
-        await admin.UploadImage(Visible, "es-MX", "Logo", File(Png(10, 10, 100)), locked: null, None);
+        await admin.StoreUploadAsync(Visible, "es-MX", "Logo", File(Png(10, 10, 100)), locked: null, None);
 
         var request = new ItemOverridesRequest
         {

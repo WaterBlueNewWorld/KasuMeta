@@ -103,7 +103,9 @@ language a day). Every other genre and tag (TMDB's keywords, TVDB's and AniList'
 tags) is English. Those are kept as the item's English terms, and the **Genre and tag
 dictionary** on the same page translates them for the whole library: pick genres or tags and a
 language, and type the translations. They're served at once, without a re-fetch; terms with no
-translation stay in English.
+translation stay in English. TMDB leaves a few genres in English even in its other languages
+("Sci-Fi & Fantasy", "Action & Adventure"); those are listed among the English terms too, and a
+dictionary entry for them replaces them in TMDB's lists.
 
 **Original language.** Each item's original language comes from Jellyfin (for seasons and
 episodes, their series'), else from TMDB or TVDB. Its values are kept even when that language

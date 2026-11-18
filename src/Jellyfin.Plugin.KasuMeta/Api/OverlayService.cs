@@ -254,37 +254,51 @@ public sealed class OverlayService
         ResolveOptions options)
     {
         var byLocale = candidates.ToDictionary(r => r.Locale, StringComparer.Ordinal);
+        var kind = field == MetadataFields.Genres ? TermKinds.Genre : TermKinds.Tag;
         var resolved = LocaleChain.Resolve(locale, byLocale.Keys, options.FallbackToBase, options.EnabledLocales);
         if (resolved is not null && AsList(byLocale[resolved]) is { } stored)
         {
+            // A provider's list may keep English names it has no translation for (TMDB sends
+            // "Sci-Fi & Fantasy" in Spanish): the dictionary fills those. An admin's list is kept as is.
+            if (stored.Item1.Source != MetadataSources.Manual && Translate(stored.Item1.Values) is { } filled)
+            {
+                return (stored.Item1 with { Values = filled, Source = MetadataSources.Dictionary }, stored.Item2);
+            }
+
             return stored;
         }
 
-        if (options.Terms is { } terms
-            && LocaleChain.Resolve(MetadataFetcher.BaseTermsLocale, byLocale.Keys, fallbackToBase: true, options.EnabledLocales) is { } baseLocale)
+        if (LocaleChain.Resolve(MetadataFetcher.BaseTermsLocale, byLocale.Keys, fallbackToBase: true, options.EnabledLocales) is { } baseLocale
+            && Translate(ListValues.Parse(byLocale[baseLocale].Value)) is { } translated)
         {
-            var kind = field == MetadataFields.Genres ? TermKinds.Genre : TermKinds.Tag;
-            var baseRow = byLocale[baseLocale];
-            var translated = 0;
-            var values = ListValues.Parse(baseRow.Value)
+            return (new LocalizedList(translated, MetadataSources.Dictionary, locale, false), byLocale[baseLocale].UpdatedAt);
+        }
+
+        return PickOriginal(byLocale, options) is { } original && AsList(original) is { } list ? list : null;
+
+        // The terms with the dictionary's translations in, or null when it has none of them.
+        IReadOnlyList<string>? Translate(IReadOnlyList<string> terms)
+        {
+            if (options.Terms is not { } dictionary)
+            {
+                return null;
+            }
+
+            var hits = 0;
+            var values = terms
                 .Select(term =>
                 {
-                    if (terms.Translate(kind, term, locale, options.FallbackToBase, options.EnabledLocales) is { } hit)
+                    if (dictionary.Translate(kind, term, locale, options.FallbackToBase, options.EnabledLocales) is { } hit)
                     {
-                        translated++;
+                        hits++;
                         return hit.Value;
                     }
 
                     return term;
                 })
                 .ToList();
-            if (translated > 0)
-            {
-                return (new LocalizedList(ListValues.Clean(values), MetadataSources.Dictionary, locale, false), baseRow.UpdatedAt);
-            }
+            return hits > 0 ? ListValues.Clean(values) : null;
         }
-
-        return PickOriginal(byLocale, options) is { } original && AsList(original) is { } list ? list : null;
 
         static (LocalizedList, DateTimeOffset)? AsList(LocalizedField row)
         {

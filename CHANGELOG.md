@@ -25,7 +25,8 @@ values.
   (spoiler tags left out).
 - **Genre and tag dictionary:** `GET /KasuMeta/Terms` and `PUT /KasuMeta/Terms/{kind}/{locale}`,
   and a section on the plugin page, translate the English terms for the whole library at serve
-  time (`Source: dictionary`).
+  time (`Source: dictionary`). They also replace the English names TMDB leaves in its localized
+  genre lists ("Sci-Fi & Fantasy").
 - **Image uploads:** `PUT /KasuMeta/Items/{itemId}/{locale}/Images/{type}` stores a JPEG, PNG,
   WebP or GIF of at most 10 MB in the new `localized_image.localized_image_file` column;
   `GET` on the same path serves it to anyone who may see the item. Overlays mark it

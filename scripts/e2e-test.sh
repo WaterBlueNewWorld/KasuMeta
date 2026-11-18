@@ -125,8 +125,9 @@ else
   body="$(batch "{\"ItemIds\":[\"$magia\",\"$antitrust\"],\"Locale\":\"ja-Latn\",\"Fields\":[\"Name\"]}")"
   [[ "$(json "d['Items']['$magia']['Name']['Value']" <<<"$body")" == "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden" ]] \
     && pass "ja-Latn serves the romaji title" || fail "romaji: $body"
-  [[ "$(json "d['Missing'] == ['$antitrust']" <<<"$body")" == "True" ]] \
-    && pass "a title without romaji is Missing, not served in kanji" || fail "ja-Latn fell back: $body"
+  # Nothing in ja-Latn or its group: the original language (English) stands in, never kanji.
+  [[ "$(json "d['Missing'] == [] and d['Items']['$antitrust']['Name']['ResolvedLocale'] == 'en-US'" <<<"$body")" == "True" ]] \
+    && pass "a title without romaji falls back to its original language (English), not to kanji" || fail "ja-Latn fell back: $body"
   [[ "$(curl -sS -H "$U" "$base/KasuMeta/Items/$magia?locale=ja-JP" | json "d['Name']['ResolvedLocale']")" == "ja-JP" ]] \
     && pass "ja-JP still gets the Japanese-script title" || fail "ja-JP"
 fi
@@ -220,7 +221,9 @@ rm -rf "$tmp_dir"
 trap - EXIT
 
 echo "Errors"
-[[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=pt-BR")" == 404 ]] && pass "no translation -> 404" || fail "404"
+[[ "$(curl -sS -H "$U" "$base/KasuMeta/Items/$antitrust?locale=pt-BR" | json "d['Name']['ResolvedLocale']")" == "en-US" ]] \
+  && pass "no Portuguese: served in the original language (English)" || fail "original-language fallback"
+[[ "$(status -H "$U" "$base/KasuMeta/Items/$twin?locale=pt-BR")" == 404 ]] && pass "nothing in any language -> 404" || fail "404"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=bad!")" == 400 ]] && pass "bad locale -> 400" || fail "400 locale"
 [[ "$(status -X POST -H 'Content-Type: application/json' --data '{"ItemIds":[],"Locale":"es-MX"}' "$base/KasuMeta/Items/Batch")" == 401 ]] \
   && pass "no token -> 401" || fail "401"
