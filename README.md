@@ -4,6 +4,12 @@ A Jellyfin plugin that serves localized titles, overviews, taglines and artwork,
 of a client app can see metadata in their own language instead of the one the library was
 scanned in.
 
+> [!IMPORTANT]
+> **KasuMeta has no effect on Jellyfin's stock UI.** It's made for other frontends to consume:
+> the localized metadata is only served through KasuMeta's own API (`/KasuMeta/...`), which a
+> client app must call itself, as KasuVideo does. Jellyfin's web client and the official apps
+> keep showing the library's own metadata, with or without the plugin installed.
+
 Jellyfin stores one set of metadata per item, in the server's language. KasuMeta keeps
 translations beside it, in its own SQLite file, and serves them through its own API. It never
 writes to Jellyfin's database or metadata fields, so stock clients behave exactly as before, and

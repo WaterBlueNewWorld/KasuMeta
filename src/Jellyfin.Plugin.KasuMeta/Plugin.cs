@@ -32,7 +32,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => PluginId;
 
     /// <inheritdoc />
-    public override string Description => "Localized titles, overviews and artwork for every user's language.";
+    public override string Description =>
+        "Localized titles, overviews and artwork for other frontends to consume through KasuMeta's API. "
+        + "It has no effect on Jellyfin's stock UI.";
 
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()

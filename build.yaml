@@ -8,13 +8,17 @@ version: "1.1.0.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 owner: "WaterBlueNewWorld"
-overview: "Localized titles, overviews and artwork for every user's language"
+overview: "Localized titles, overviews and artwork for other frontends (no effect on Jellyfin's stock UI)"
 description: >
-  Stores localized metadata beside Jellyfin (its own SQLite file) and serves it
-  to client apps through /KasuMeta endpoints: titles, overviews, taglines and
-  artwork per locale from TMDB, TVDB or both (by priority weight), anime titles
-  from AniList, search by localized name, and admin overrides. Stock clients are
-  unaffected. Requires Jellyfin 12.x and a TMDB or TVDB API key.
+  Note: this plugin has no effect on Jellyfin's stock UI. It is made for other
+  frontends to consume: the localized metadata is only served through its own
+  /KasuMeta API, which a client app must call itself. Jellyfin's web client and
+  official apps keep showing the library's own metadata.
+  Stores localized metadata beside Jellyfin (its own SQLite file): titles,
+  overviews, taglines, genres, tags and artwork per locale from TMDB, TVDB and
+  AniList, chosen per field, with an original-language fallback, search by
+  localized name, and admin overrides and image uploads. Requires Jellyfin 12.x
+  and a TMDB or TVDB API key.
 category: "Metadata"
 artifacts:
   - "Jellyfin.Plugin.KasuMeta.dll"
