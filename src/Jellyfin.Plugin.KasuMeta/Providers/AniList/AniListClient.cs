@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Localization;
+using Jellyfin.Plugin.KasuMeta.Storage;
 using MediaBrowser.Common.Net;
 using Microsoft.Extensions.Logging;
 
@@ -49,6 +50,7 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IKasuMetaConfigProvider _config;
     private readonly ILogger<AniListClient> _logger;
+    private readonly ProviderStats _stats;
     private readonly SemaphoreSlim _oneAtATime = new(1, 1);
     private readonly SlidingWindowRateLimiter _rate = new(new SlidingWindowRateLimiterOptions
     {
@@ -60,10 +62,15 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
         AutoReplenishment = true,
     });
 
-    public AniListClient(IHttpClientFactory httpClientFactory, IKasuMetaConfigProvider config, ILogger<AniListClient> logger)
+    public AniListClient(
+        IHttpClientFactory httpClientFactory,
+        IKasuMetaConfigProvider config,
+        ProviderStats stats,
+        ILogger<AniListClient> logger)
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
+        _stats = stats;
         _logger = logger;
     }
 
@@ -72,6 +79,26 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<AniListTranslation>?> GetMediaAsync(int mediaId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await GetMediaCoreAsync(mediaId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _stats.Failure(MetadataSources.AniList, ex.Message);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _oneAtATime.Dispose();
+        _rate.Dispose();
+    }
+
+    private async Task<IReadOnlyList<AniListTranslation>?> GetMediaCoreAsync(int mediaId, CancellationToken cancellationToken)
     {
         var body = JsonSerializer.Serialize(new { query = Query, variables = new { id = mediaId } });
         for (var attempt = 0; ; attempt++)
@@ -90,12 +117,14 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
                 request.Headers.UserAgent.Add(new ProductInfoHeaderValue("(Jellyfin plugin)"));
 
                 var http = _httpClientFactory.CreateClient(NamedClient.Default);
+                _stats.Request(MetadataSources.AniList);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                     .ConfigureAwait(false);
 
                 // AniList answers an unknown id with 404 and a GraphQL error body.
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
+                    _stats.NotFound(MetadataSources.AniList);
                     return null;
                 }
 
@@ -137,15 +166,9 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
                 _oneAtATime.Release();
             }
 
+            _stats.Retry(MetadataSources.AniList);
             await Delay(wait, cancellationToken).ConfigureAwait(false);
         }
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        _oneAtATime.Dispose();
-        _rate.Dispose();
     }
 
     /// <summary>Maps a media entry to per-locale text; entries with no text are left out.</summary>

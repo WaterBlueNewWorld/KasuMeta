@@ -4,6 +4,7 @@ using Jellyfin.Plugin.KasuMeta.Api;
 using Jellyfin.Plugin.KasuMeta.Api.Models;
 using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Fetching;
+using Jellyfin.Plugin.KasuMeta.Providers;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Support;
@@ -23,6 +24,7 @@ public sealed class KasuMetaControllerTests : IDisposable
     private readonly TestDatabase _db = new();
     private readonly FakeLibrary _library = new();
     private readonly FetchQueue _queue = new();
+    private readonly ProviderStats _stats = new(TimeProvider.System);
     private readonly FakeConfig _config = new(new PluginConfiguration
     {
         EnabledLocales = ["es-MX", "ja-JP"],
@@ -55,6 +57,7 @@ public sealed class KasuMetaControllerTests : IDisposable
     [InlineData(nameof(KasuMetaController.GetAllLocales))]
     [InlineData(nameof(KasuMetaController.SetOverrides))]
     [InlineData(nameof(KasuMetaController.Refresh))]
+    [InlineData(nameof(KasuMetaController.GetStatus))]
     public void Admin_routes_require_elevation(string action)
     {
         var method = typeof(KasuMetaController).GetMethod(action)!;
@@ -536,7 +539,8 @@ public sealed class KasuMetaControllerTests : IDisposable
             new SearchService(_db.Store, _library),
             _library,
             _db.Store,
-            _queue)
+            _queue,
+            new StatusService(_db.Store, _db.Database, _queue, _stats, _library, _config))
         {
             ControllerContext = new ControllerContext
             {

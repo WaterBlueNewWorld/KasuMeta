@@ -154,7 +154,7 @@ public class TmdbClientTests
     {
         var handler = new FakeHandler();
         var config = new FakeConfig(new PluginConfiguration { TmdbApiKey = V4Token, EnabledLocales = [] });
-        var client = new TmdbClient(new FakeHttpClientFactory(handler), config, NullLogger<TmdbClient>.Instance);
+        var client = new TmdbClient(new FakeHttpClientFactory(handler), config, new ProviderStats(TimeProvider.System), NullLogger<TmdbClient>.Instance);
         handler.Respond(HttpStatusCode.OK, EmptyDetails);
 
         await client.GetMovieAsync(1, None);
@@ -399,7 +399,7 @@ public class TmdbClientTests
         var handler = new FakeHandler();
         var config = new FakeConfig(new PluginConfiguration { TmdbApiKey = key });
         var delays = new List<TimeSpan>();
-        var client = new TmdbClient(new FakeHttpClientFactory(handler), config, NullLogger<TmdbClient>.Instance)
+        var client = new TmdbClient(new FakeHttpClientFactory(handler), config, new ProviderStats(TimeProvider.System), NullLogger<TmdbClient>.Instance)
         {
             Delay = (wait, _) =>
             {

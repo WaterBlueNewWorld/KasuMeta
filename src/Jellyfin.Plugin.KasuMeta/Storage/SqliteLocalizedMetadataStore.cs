@@ -484,6 +484,53 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     }
 
     /// <inheritdoc />
+    public async Task<FetchSummary> GetFetchSummaryAsync(int recentErrors, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(recentErrors);
+        var counts = new Dictionary<FetchStatus, int>();
+        var errors = new List<FetchState>();
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT status, COUNT(*) FROM fetch_state GROUP BY status;";
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    counts[ParseStatus(reader.GetString(0))] = reader.GetInt32(1);
+                }
+            }
+
+            if (recentErrors > 0)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT item_id, provider_ids, last_fetch, last_error, fetch_version, kind FROM fetch_state
+                    WHERE status = 'error'
+                    ORDER BY COALESCE(last_fetch, 0) DESC, item_id
+                    LIMIT $limit;
+                    """;
+                command.Parameters.AddWithValue("$limit", recentErrors);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    errors.Add(new FetchState(
+                        ParseId(reader.GetString(0)),
+                        DeserializeProviderIds(reader.GetString(1)),
+                        reader.IsDBNull(2) ? null : DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(2)),
+                        FetchStatus.Error,
+                        reader.IsDBNull(3) ? null : reader.GetString(3),
+                        reader.GetInt32(4),
+                        reader.IsDBNull(5) ? null : ParseKind(reader.GetString(5))));
+                }
+            }
+        }
+
+        return new FetchSummary(counts, errors);
+    }
+
+    /// <inheritdoc />
     public async Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken)
     {
         var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);

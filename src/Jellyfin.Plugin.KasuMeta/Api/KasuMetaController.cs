@@ -68,6 +68,7 @@ public class KasuMetaController : ControllerBase
     private readonly ILibraryItemSource _library;
     private readonly ILocalizedMetadataStore _store;
     private readonly IFetchQueue _queue;
+    private readonly StatusService _status;
 
     public KasuMetaController(
         IKasuMetaConfigProvider config,
@@ -75,7 +76,8 @@ public class KasuMetaController : ControllerBase
         SearchService search,
         ILibraryItemSource library,
         ILocalizedMetadataStore store,
-        IFetchQueue queue)
+        IFetchQueue queue,
+        StatusService status)
     {
         _config = config;
         _overlays = overlays;
@@ -83,6 +85,7 @@ public class KasuMetaController : ControllerBase
         _library = library;
         _store = store;
         _queue = queue;
+        _status = status;
     }
 
     /// <summary>
@@ -174,6 +177,20 @@ public class KasuMetaController : ControllerBase
             .ConfigureAwait(false);
         return batch.Items.Values.FirstOrDefault() is { } overlay ? overlay : NotFound();
     }
+
+    /// <summary>
+    /// Admin: how the plugin is doing. Configuration health, fetch progress (queue length, items
+    /// per outcome), the newest failures, and each provider's counters since the server started.
+    /// The plugin's configuration page shows it.
+    /// </summary>
+    /// <response code="200">The status.</response>
+    /// <response code="403">Not an administrator.</response>
+    [HttpGet("Status")]
+    [Authorize(Policy = ElevationPolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<KasuMetaStatus>> GetStatus(CancellationToken cancellationToken) =>
+        await _status.BuildAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Admin view of one item: every stored locale as stored (no fallback), with each value's

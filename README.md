@@ -38,9 +38,15 @@ Jellyfin 10.11 and older can't load the plugin: Jellyfin 12 moved to .NET 10.
 
 ## Installation
 
-Until a plugin repository is published, install by hand:
+**From the plugin repository** (once the first release is published):
 
-1. Build the plugin (see [Building](#building)), or download the DLL from a release.
+1. Dashboard › Plugins › Repositories › add
+   `https://waterbluenewworld.github.io/KasuMeta/manifest.json`.
+2. Install KasuMeta from the Catalog and restart Jellyfin.
+
+**By hand:**
+
+1. Build the plugin (see [Building](#building)), or take the zip from a release.
 2. Copy `Jellyfin.Plugin.KasuMeta.dll` into `<jellyfin config>/plugins/KasuMeta_0.0.1.0/`.
 3. Restart Jellyfin. KasuMeta appears under Dashboard › Plugins.
 
@@ -60,6 +66,11 @@ After the key is set, the "Fetch missing translations" task fetches the whole li
 TMDB request per item, at most 20 a second. AniList allows 30 requests a minute, so anime
 take longer.
 
+The **Status** panel on the same page shows the progress (items waiting, fetched, failed), the
+latest failures with the items' names, and each provider's requests, retries and failures since
+the server started. Failed items are retried by the daily "Refresh stale translations" task, and
+each failure is logged as a warning.
+
 ## API
 
 All routes sit behind Jellyfin's own authentication: send the token your client already uses.
@@ -73,6 +84,7 @@ JSON is PascalCase, as everywhere in Jellyfin, and empty fields are left out. Th
 | `POST /KasuMeta/Items/Batch` | Titles, overviews, taglines and images for up to 200 items (one call per grid page) |
 | `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's localized data (detail page) |
 | `GET /KasuMeta/Search?q=cabana&locale=es-MX` | Find items by their localized names |
+| `GET /KasuMeta/Status` | Admin: fetch progress, recent failures and provider counters |
 | `GET /KasuMeta/Items/{itemId}/All` | Admin: every stored locale of an item, with sources, locks and fetch state |
 | `PUT /KasuMeta/Items/{itemId}/{locale}` | Admin: set (and lock) or remove manual values |
 | `POST /KasuMeta/Items/{itemId}/Refresh` | Admin: re-fetch an item from its providers |
@@ -114,11 +126,30 @@ bash scripts/e2e-test.sh             # live end-to-end checks (needs a TMDB key 
 docker restart kasumeta-jellyfin     # after each rebuild
 ```
 
+### Continuous integration and releases
+
+Every push and pull request runs [CI](.github/workflows/ci.yml): the version check, the tests
+against Jellyfin 12.0.0, 12.1.0 and the newest 12.x on NuGet, and the plugin zip (kept as a
+build artifact).
+
+To release, for example 0.1.0:
+
+1. Set the version in `Directory.Build.props` (`0.1.0.0`), `build.yaml` (with a new
+   `changelog`), the plugin folder in `docker/dev/compose.yaml` and the install path in this
+   README. `bash scripts/check-version.sh` confirms they agree.
+2. Rename `[Unreleased]` in `CHANGELOG.md` to `[0.1.0]`; it becomes the release notes.
+3. Push the tag `v0.1.0`. The [release workflow](.github/workflows/release.yml) runs CI,
+   publishes a GitHub release with the zip, and adds the version to `manifest.json` on the
+   `gh-pages` branch.
+
+Before the first release, enable GitHub Pages once: Settings › Pages › Deploy from a branch ›
+`gh-pages`, `/ (root)`.
+
 ## Status
 
 Pre-release (0.0.1). Done and verified on a live Jellyfin 12.1 server: localized text, images,
-search, manual overrides and AniList titles. Next: continuous integration, releases and a
-plugin repository for one-click installs from the dashboard.
+search, manual overrides, AniList titles and the status panel. CI runs on every push; the
+first release will publish the plugin repository.
 
 ## Attribution
 

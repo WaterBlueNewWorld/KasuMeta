@@ -61,12 +61,90 @@
                     </button>
                 </div>
             </form>
+
+            <div class="verticalSection" id="KasuMetaStatusSection">
+                <h2 class="sectionTitle">Status</h2>
+                <p class="fieldDescription">
+                    Since the server started. Failed items are fetched again by the
+                    "Refresh stale translations" task (Dashboard › Scheduled Tasks).
+                </p>
+                <table id="KasuMetaStatusTable" style="border-collapse: collapse; margin-bottom: 1em;"></table>
+                <h3 id="KasuMetaErrorsTitle" style="display: none;">Recent errors</h3>
+                <table id="KasuMetaErrorsTable" style="border-collapse: collapse; margin-bottom: 1em;"></table>
+                <button is="emby-button" type="button" id="KasuMetaStatusRefresh" class="raised emby-button">
+                    <span>Refresh status</span>
+                </button>
+            </div>
         </div>
     </div>
     <script type="text/javascript">
         var KasuMetaConfig = {
             pluginUniqueId: '703b8e8e-7d16-40bd-8f92-87fad8b741ae'
         };
+
+        // Rows are built with textContent only: error messages come from providers.
+        function kasuMetaRow(table, cells, header) {
+            var tr = document.createElement('tr');
+            cells.forEach(function (text, i) {
+                var cell = document.createElement(header || i === 0 ? 'th' : 'td');
+                cell.textContent = text === null || text === undefined ? '' : String(text);
+                cell.style.textAlign = 'left';
+                cell.style.padding = '0.2em 1.5em 0.2em 0';
+                cell.style.fontWeight = header || i === 0 ? 'bold' : 'normal';
+                tr.appendChild(cell);
+            });
+            table.appendChild(tr);
+        }
+
+        function kasuMetaWhen(value) {
+            return value ? new Date(value).toLocaleString() : '';
+        }
+
+        function kasuMetaCount(n, one, many) {
+            return n + ' ' + (n === 1 ? one : many);
+        }
+
+        function kasuMetaLoadStatus() {
+            var table = document.querySelector('#KasuMetaStatusTable');
+            var errors = document.querySelector('#KasuMetaErrorsTable');
+            ApiClient.getJSON(ApiClient.getUrl('KasuMeta/Status')).then(function (s) {
+                table.replaceChildren();
+                errors.replaceChildren();
+                var items = s.Items;
+                kasuMetaRow(table, ['Version', s.Version + ' (database schema ' + s.SchemaVersion + ')']);
+                kasuMetaRow(table, ['TMDB key', s.TmdbConfigured ? 'Set' : 'Missing: nothing can be fetched']);
+                kasuMetaRow(table, ['AniList', s.AniListEnabled ? 'On' : 'Off']);
+                kasuMetaRow(table, ['Search', s.SearchIndex ? 'Full-text index' : 'Substring matching (no FTS5)']);
+                kasuMetaRow(table, ['Waiting to be fetched', s.Queued]);
+                kasuMetaRow(table, ['Items', items.Total + ': ' + items.Ok + ' fetched, ' + items.Skipped + ' nothing to fetch, '
+                    + items.Error + ' failed' + (items.Pending ? ', ' + items.Pending + ' unfinished' : '')]);
+                Object.keys(s.Providers || {}).forEach(function (name) {
+                    var p = s.Providers[name];
+                    var text = kasuMetaCount(p.Requests, 'request', 'requests') + ', '
+                        + kasuMetaCount(p.Retries, 'retry', 'retries') + ', '
+                        + p.NotFound + ' not found, ' + p.Failures + ' failed';
+                    if (p.LastFailure) {
+                        text += '; last failure ' + kasuMetaWhen(p.LastFailureAt) + ': ' + p.LastFailure;
+                    }
+
+                    kasuMetaRow(table, [name === 'tmdb' ? 'TMDB' : name === 'anilist' ? 'AniList' : name, text]);
+                });
+
+                var recent = s.RecentErrors || [];
+                document.querySelector('#KasuMetaErrorsTitle').style.display = recent.length ? '' : 'none';
+                if (recent.length) {
+                    kasuMetaRow(errors, ['Item', 'Error', 'When'], true);
+                    recent.forEach(function (e) {
+                        kasuMetaRow(errors, [(e.Name || e.ItemId) + (e.Type ? ' (' + e.Type + ')' : ''), e.Error, kasuMetaWhen(e.LastFetch)]);
+                    });
+                }
+            }, function () {
+                table.replaceChildren();
+                kasuMetaRow(table, ['Status', 'Could not load the status.']);
+            });
+        }
+
+        document.querySelector('#KasuMetaStatusRefresh').addEventListener('click', kasuMetaLoadStatus);
 
         document.querySelector('#KasuMetaConfigPage')
             .addEventListener('pageshow', function () {
@@ -80,6 +158,7 @@
                     document.querySelector('#RefreshIntervalHours').value = config.RefreshIntervalHours;
                     Dashboard.hideLoadingMsg();
                 });
+                kasuMetaLoadStatus();
             });
 
         document.querySelector('#KasuMetaConfigForm')

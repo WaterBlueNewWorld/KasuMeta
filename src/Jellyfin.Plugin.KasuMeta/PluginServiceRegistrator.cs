@@ -2,6 +2,7 @@ using Jellyfin.Plugin.KasuMeta.Api;
 using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Fetching;
 using Jellyfin.Plugin.KasuMeta.Library;
+using Jellyfin.Plugin.KasuMeta.Providers;
 using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
 using Jellyfin.Plugin.KasuMeta.Storage;
@@ -38,6 +39,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService<StoreStartupService>();
 
         // Providers. HttpClient comes from Jellyfin's own IHttpClientFactory (NamedClient.Default).
+        serviceCollection.AddSingleton<ProviderStats>();
         serviceCollection.AddSingleton<ITmdbClient, TmdbClient>();
         serviceCollection.AddSingleton<IAniListClient, AniListClient>();
 
@@ -50,5 +52,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService<LibraryEventsService>();
         serviceCollection.AddSingleton<OverlayService>();
         serviceCollection.AddSingleton<SearchService>();
+        serviceCollection.AddSingleton<StatusService>();
     }
 }

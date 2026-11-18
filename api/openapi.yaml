@@ -120,6 +120,22 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404":
           description: Nothing to serve. The item isn't fetched yet, has no translation in any fallback locale, is unknown, or isn't visible to the caller.
+  /KasuMeta/Status:
+    get:
+      summary: "Admin: how the plugin is doing"
+      description: >
+        Configuration health, fetch progress (queue length, items per outcome), the newest failed
+        fetches with the items' library names, and each provider's counters since the server
+        started. The plugin's configuration page shows it.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KasuMetaStatus" }
+              example: { $ref: "fixtures/status.json" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/NotAdmin" }
   /KasuMeta/Items/{itemId}/All:
     get:
       summary: "Admin: every stored locale of one item"
@@ -363,6 +379,75 @@ components:
         Locked:
           type: boolean
 
+    KasuMetaStatus:
+      type: object
+      required: [Version, SchemaVersion, SearchIndex, TmdbConfigured, AniListEnabled, Queued, Items, RecentErrors, Providers]
+      properties:
+        Version: { type: string }
+        SchemaVersion: { type: integer }
+        SearchIndex:
+          type: boolean
+          description: False when the server's SQLite lacks FTS5 and search matches substrings instead.
+        TmdbConfigured: { type: boolean }
+        AniListEnabled: { type: boolean }
+        Queued:
+          type: integer
+          description: Items waiting to be fetched; a backfill's progress.
+        Items: { $ref: "#/components/schemas/ItemCounts" }
+        RecentErrors:
+          type: array
+          description: The newest failed fetches (at most 10), newest first.
+          items: { $ref: "#/components/schemas/FetchProblem" }
+        Providers:
+          type: object
+          description: Counters per provider (tmdb, anilist) since the server started; a provider not used yet is absent.
+          additionalProperties: { $ref: "#/components/schemas/ProviderCounters" }
+    ItemCounts:
+      type: object
+      required: [Total, Ok, Skipped, Error, Pending]
+      properties:
+        Total: { type: integer }
+        Ok: { type: integer }
+        Skipped:
+          type: integer
+          description: Nothing to fetch (no provider id, or unknown to the provider).
+        Error:
+          type: integer
+          description: The last fetch failed; retried by the "Refresh stale translations" task.
+        Pending:
+          type: integer
+          description: Queued once and never finished (e.g. a restart mid-fetch).
+    FetchProblem:
+      type: object
+      required: [ItemId]
+      properties:
+        ItemId: { type: string }
+        Name:
+          type: string
+          description: The item's name in the library; absent if it's gone.
+        Type:
+          type: string
+          enum: [Movie, Series, Season, Episode]
+        Error: { type: string }
+        LastFetch: { type: string, format: date-time }
+    ProviderCounters:
+      type: object
+      required: [Requests, Retries, NotFound, Failures]
+      properties:
+        Requests:
+          type: integer
+          description: HTTP requests sent, retries included.
+        Retries: { type: integer }
+        NotFound:
+          type: integer
+          description: Lookups answered with 404.
+        Failures:
+          type: integer
+          description: Lookups that failed for good, including "no key configured".
+        LastFailure:
+          type: string
+          description: The last failure's message; never contains a key.
+        LastFailureAt: { type: string, format: date-time }
     ItemTranslations:
       type: object
       required: [ItemId, Locales]

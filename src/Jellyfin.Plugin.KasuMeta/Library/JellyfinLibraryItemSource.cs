@@ -95,7 +95,7 @@ internal sealed class JellyfinLibraryItemSource : ILibraryItemSource
                 ? new Dictionary<string, string>(ids, StringComparer.Ordinal)
                 : new Dictionary<string, string>(StringComparer.Ordinal);
 
-        return item switch
+        var info = item switch
         {
             Movie movie => new LibraryItemInfo(movie.Id, ItemKind.Movie, Ids(movie), Ids(null)),
             Series series => new LibraryItemInfo(series.Id, ItemKind.Series, Ids(series), Ids(null)),
@@ -110,5 +110,6 @@ internal sealed class JellyfinLibraryItemSource : ILibraryItemSource
                 EpisodeNumber: episode.IndexNumber),
             _ => null,
         };
+        return info is null ? null : info with { Name = item.Name };
     }
 }

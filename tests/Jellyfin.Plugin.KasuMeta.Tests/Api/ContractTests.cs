@@ -4,6 +4,7 @@ using Jellyfin.Extensions.Json;
 using Jellyfin.Plugin.KasuMeta.Api;
 using Jellyfin.Plugin.KasuMeta.Api.Models;
 using Jellyfin.Plugin.KasuMeta.Configuration;
+using Jellyfin.Plugin.KasuMeta.Providers;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Support;
@@ -24,6 +25,7 @@ public class ContractTests
     [InlineData("item.json", typeof(ItemOverlay))]
     [InlineData("search.json", typeof(SearchResponse))]
     [InlineData("translations.json", typeof(ItemTranslations))]
+    [InlineData("status.json", typeof(KasuMetaStatus))]
     public void Fixtures_round_trip_through_the_DTOs_unchanged(string fixture, Type type)
     {
         var json = Read(fixture);
@@ -85,6 +87,10 @@ public class ContractTests
     [InlineData("ItemOverridesRequest", typeof(ItemOverridesRequest))]
     [InlineData("ManualFieldValue", typeof(ManualFieldValue))]
     [InlineData("ManualImageValue", typeof(ManualImageValue))]
+    [InlineData("KasuMetaStatus", typeof(KasuMetaStatus))]
+    [InlineData("ItemCounts", typeof(ItemCounts))]
+    [InlineData("FetchProblem", typeof(FetchProblem))]
+    [InlineData("ProviderCounters", typeof(ProviderCounters))]
     public void The_openapi_schema_lists_exactly_the_DTO_properties(string schema, Type type)
     {
         var properties = Spec()["components"]["schemas"][schema]["properties"];
@@ -104,7 +110,7 @@ public class ContractTests
             .Select(kv => ((YamlScalarNode)kv.Value).Value!)
             .ToList();
 
-        Assert.Equal(5, refs.Count);
+        Assert.Equal(6, refs.Count);
         Assert.All(refs, r => Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "Contract", Path.GetFileName(r))), r));
     }
 

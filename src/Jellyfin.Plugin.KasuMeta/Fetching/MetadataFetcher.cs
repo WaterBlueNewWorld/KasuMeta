@@ -7,6 +7,7 @@ using Jellyfin.Plugin.KasuMeta.Providers;
 using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
 using Jellyfin.Plugin.KasuMeta.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.KasuMeta.Fetching;
 
@@ -51,6 +52,7 @@ public sealed class MetadataFetcher
     private readonly IAniListClient _aniList;
     private readonly IKasuMetaConfigProvider _config;
     private readonly TimeProvider _time;
+    private readonly ILogger<MetadataFetcher> _logger;
 
     public MetadataFetcher(
         ILibraryItemSource library,
@@ -58,7 +60,8 @@ public sealed class MetadataFetcher
         ITmdbClient tmdb,
         IAniListClient aniList,
         IKasuMetaConfigProvider config,
-        TimeProvider time)
+        TimeProvider time,
+        ILogger<MetadataFetcher> logger)
     {
         _library = library;
         _store = store;
@@ -66,6 +69,7 @@ public sealed class MetadataFetcher
         _aniList = aniList;
         _config = config;
         _time = time;
+        _logger = logger;
     }
 
     /// <summary>Fetches one item; never throws for provider failures (they're recorded).</summary>
@@ -170,7 +174,9 @@ public sealed class MetadataFetcher
 
         if (errors.Count > 0)
         {
-            await SetStateAsync(item, snapshot, FetchStatus.Error, string.Join("; ", errors), cancellationToken).ConfigureAwait(false);
+            var error = string.Join("; ", errors);
+            FetchLog.ProviderFailed(_logger, item.Name, itemId, error);
+            await SetStateAsync(item, snapshot, FetchStatus.Error, error, cancellationToken).ConfigureAwait(false);
             return FetchResult.Failed;
         }
 

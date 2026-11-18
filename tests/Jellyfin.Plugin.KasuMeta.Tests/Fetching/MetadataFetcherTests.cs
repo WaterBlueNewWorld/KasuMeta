@@ -8,6 +8,7 @@ using Jellyfin.Plugin.KasuMeta.Search;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Support;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jellyfin.Plugin.KasuMeta.Tests.Fetching;
 
@@ -62,7 +63,7 @@ public sealed class MetadataFetcherTests : IDisposable
 
     public MetadataFetcherTests()
     {
-        _fetcher = new MetadataFetcher(_library, _db.Store, _tmdb, _aniList, _config, _db.Time);
+        _fetcher = new MetadataFetcher(_library, _db.Store, _tmdb, _aniList, _config, _db.Time, NullLogger<MetadataFetcher>.Instance);
         _tmdb.Answer = _ => Antitrust_;
         _aniList.Answer = _ => MagiaAniList;
     }

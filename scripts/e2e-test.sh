@@ -197,6 +197,14 @@ set_folders True "[]"
 trap - EXIT
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$magia?locale=es-MX")" == 200 ]] && pass "visible again after restoring access" || fail "restore"
 
+echo "Status"
+[[ "$(status -H "$U" "$base/KasuMeta/Status")" == 403 ]] && pass "status -> 403 for a non-admin" || fail "403 status"
+body="$(curl -sS -H "$A" "$base/KasuMeta/Status")"
+[[ "$(json "d['TmdbConfigured'] and d['SearchIndex'] and d['Items']['Total'] == sum(v for k, v in d['Items'].items() if k != 'Total') and d['Items']['Ok'] > 0" <<<"$body")" == "True" ]] \
+  && pass "status: TMDB key set, search index on, item counts add up" || fail "status: $body"
+[[ "$(json "d['Providers']['tmdb']['Requests'] > 0" <<<"$body")" == "True" ]] \
+  && pass "status counts TMDB requests (the refresh above sent some)" || fail "provider counters: $body"
+
 echo "Scheduled tasks"
 tasks="$(curl -sS -H "$A" "$base/ScheduledTasks")"
 [[ "$(json "sorted(t['Key'] for t in d if t['Category']=='KasuMeta')" <<<"$tasks")" == "['KasuMetaBackfill', 'KasuMetaRefreshStale']" ]] \

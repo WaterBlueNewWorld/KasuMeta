@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Jellyfin.Plugin.KasuMeta.Providers;
 using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Tests.Support;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -194,7 +195,7 @@ public class AniListClientTests
     {
         var handler = new FakeHandler();
         var delays = new List<TimeSpan>();
-        var client = new AniListClient(new FakeHttpClientFactory(handler), new FakeConfig(), NullLogger<AniListClient>.Instance)
+        var client = new AniListClient(new FakeHttpClientFactory(handler), new FakeConfig(), new ProviderStats(TimeProvider.System), NullLogger<AniListClient>.Instance)
         {
             Delay = (wait, _) =>
             {

@@ -58,6 +58,7 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IKasuMetaConfigProvider _config;
     private readonly ILogger<TmdbClient> _logger;
+    private readonly ProviderStats _stats;
     private readonly SemaphoreSlim _concurrency = new(MaxConcurrency, MaxConcurrency);
     private readonly TokenBucketRateLimiter _rate = new(new TokenBucketRateLimiterOptions
     {
@@ -69,10 +70,15 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         AutoReplenishment = true,
     });
 
-    public TmdbClient(IHttpClientFactory httpClientFactory, IKasuMetaConfigProvider config, ILogger<TmdbClient> logger)
+    public TmdbClient(
+        IHttpClientFactory httpClientFactory,
+        IKasuMetaConfigProvider config,
+        ProviderStats stats,
+        ILogger<TmdbClient> logger)
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
+        _stats = stats;
         _logger = logger;
     }
 
@@ -273,8 +279,22 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         return new TmdbTitle(body is null ? [] : Map(body), []);
     }
 
-    /// <summary>GETs and parses JSON; <c>Found</c> is false on 404.</summary>
+    /// <summary>GETs and parses JSON; <c>Found</c> is false on 404. Counts what happened for the status page.</summary>
     private async Task<(bool Found, T? Body)> GetJsonAsync<T>(string path, string? query, CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            return await GetJsonCoreAsync<T>(path, query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _stats.Failure(MetadataSources.Tmdb, ex.Message);
+            throw;
+        }
+    }
+
+    private async Task<(bool Found, T? Body)> GetJsonCoreAsync<T>(string path, string? query, CancellationToken cancellationToken)
         where T : class
     {
         var key = _config.Current.TmdbApiKey?.Trim();
@@ -313,6 +333,7 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
                 }
 
                 var http = _httpClientFactory.CreateClient(NamedClient.Default);
+                _stats.Request(MetadataSources.Tmdb);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                     .ConfigureAwait(false);
 
@@ -331,6 +352,7 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
                 switch (response.StatusCode)
                 {
                     case HttpStatusCode.NotFound:
+                        _stats.NotFound(MetadataSources.Tmdb);
                         return (false, null);
                     case HttpStatusCode.Unauthorized:
                         throw new ProviderAuthenticationException("TMDB rejected the API key (401).");
@@ -364,6 +386,7 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
                 _concurrency.Release();
             }
 
+            _stats.Retry(MetadataSources.Tmdb);
             await Delay(wait.Value, cancellationToken).ConfigureAwait(false);
         }
     }

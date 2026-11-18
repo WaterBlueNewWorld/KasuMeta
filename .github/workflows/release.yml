@@ -1,0 +1,88 @@
+name: Release
+
+# Push a tag such as v0.1.0 (matching Directory.Build.props and build.yaml) to publish:
+#   1. the CI workflow runs (tests on every Jellyfin line, package);
+#   2. a GitHub release is created with the plugin zip;
+#   3. manifest.json on the gh-pages branch gains the version, so Jellyfin servers using
+#      https://<owner>.github.io/<repo>/manifest.json as a plugin repository offer it.
+# One-time setup: Settings > Pages > Deploy from a branch > gh-pages, / (root).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Publish
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and push gh-pages
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag matches the plugin version
+        run: bash scripts/check-version.sh "$GITHUB_REF_NAME"
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the plugin zip
+        id: build
+        run: |
+          pip install jprm==1.1.0
+          zip="$(jprm --verbosity=info plugin build . -o artifacts)"
+          echo "zip=$zip" >>"$GITHUB_OUTPUT"
+          echo "name=$(basename "$zip")" >>"$GITHUB_OUTPUT"
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          # The section headed with this version, e.g. "## [0.1.0]"; GitHub's generated
+          # notes when there is none.
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            /^## \[/ { if (found) exit; if (index($0, "[" v "]")) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md >notes.md
+          if [[ ! -s notes.md ]]; then
+            rm notes.md
+            echo "No CHANGELOG section for $version; using generated notes."
+          fi
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=(--generate-notes)
+          [[ -f notes.md ]] && notes=(--notes-file notes.md)
+          gh release create "$GITHUB_REF_NAME" "${{ steps.build.outputs.zip }}" \
+            --title "KasuMeta $GITHUB_REF_NAME" --verify-tag "${notes[@]}"
+
+      - name: Add the version to the plugin repository (gh-pages)
+        run: |
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/${{ steps.build.outputs.name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin gh-pages; then
+            git worktree add site FETCH_HEAD
+            git -C site switch -c gh-pages
+          else
+            git worktree add --orphan -b gh-pages site
+          fi
+          [[ -f site/manifest.json ]] || jprm repo init site
+          # The zip stays on the release; the manifest points at it.
+          jprm repo add -U "$url" site "${{ steps.build.outputs.zip }}"
+          touch site/.nojekyll
+          git -C site add manifest.json .nojekyll
+          git -C site commit -m "KasuMeta $GITHUB_REF_NAME"
+          git -C site push origin gh-pages
+          echo "Plugin repository: https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/manifest.json"

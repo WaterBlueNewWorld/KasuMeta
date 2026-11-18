@@ -1,0 +1,40 @@
+{
+  "Version": "0.0.1.0",
+  "SchemaVersion": 3,
+  "SearchIndex": true,
+  "TmdbConfigured": true,
+  "AniListEnabled": true,
+  "Queued": 0,
+  "Items": {
+    "Total": 38,
+    "Ok": 35,
+    "Skipped": 2,
+    "Error": 1,
+    "Pending": 0
+  },
+  "RecentErrors": [
+    {
+      "ItemId": "1eb732044aec1079626f8d928d40e1bc",
+      "Name": "Antitrust",
+      "Type": "Movie",
+      "Error": "TMDB rejected the API key (401).",
+      "LastFetch": "2026-11-18T00:26:25+00:00"
+    }
+  ],
+  "Providers": {
+    "anilist": {
+      "Requests": 1,
+      "Retries": 0,
+      "NotFound": 0,
+      "Failures": 0
+    },
+    "tmdb": {
+      "Requests": 2,
+      "Retries": 0,
+      "NotFound": 0,
+      "Failures": 1,
+      "LastFailure": "TMDB rejected the API key (401).",
+      "LastFailureAt": "2026-11-18T00:26:25.911847+00:00"
+    }
+  }
+}

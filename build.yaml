@@ -1,4 +1,7 @@
 # Manifest for jprm (Jellyfin Plugin Repository Manager): `jprm plugin build .`
+# The version must match Directory.Build.props; scripts/check-version.sh checks it, and the
+# release workflow checks the tag against it. The changelog is what Jellyfin's plugin catalog
+# shows for this version: rewrite it for every release.
 name: "KasuMeta"
 guid: "703b8e8e-7d16-40bd-8f92-87fad8b741ae"
 version: "0.0.1.0"
@@ -8,9 +11,14 @@ owner: "WaterBlueNewWorld"
 overview: "Localized titles, overviews and artwork for every user's language"
 description: >
   Stores localized metadata beside Jellyfin (its own SQLite file) and serves it
-  to client apps through /KasuMeta endpoints. Stock clients are unaffected.
+  to client apps through /KasuMeta endpoints: titles, overviews, taglines and
+  artwork per locale from TMDB, anime titles from AniList, search by localized
+  name, and admin overrides. Stock clients are unaffected. Requires Jellyfin 12.x
+  and a TMDB API key.
 category: "Metadata"
 artifacts:
   - "Jellyfin.Plugin.KasuMeta.dll"
 changelog: >
-  0.0.1: Phase 0 spike, GET /KasuMeta/Info. Requires Jellyfin 12.x.
+  Pre-release. Localized titles, overviews, taglines and artwork from TMDB,
+  anime titles from AniList, search by localized name, admin overrides, and a
+  status panel on the plugin page.

@@ -5,6 +5,20 @@ All notable changes to KasuMeta. Format: [Keep a Changelog](https://keepachangel
 ## [Unreleased]
 
 ### Added
+- Phase 5, hardening and distribution:
+  - `GET /KasuMeta/Status` (admins) and a **Status** panel on the plugin page: TMDB key and
+    AniList state, search index, items waiting, items per fetch outcome, the newest failures
+    with the items' library names, and per-provider counters (requests, retries, 404s,
+    failures, the last failure) since the server started.
+  - A warning in the server log for every provider failure, naming the item, and one line
+    per drained fetch batch with what it did.
+  - CI on every push and pull request: version check, tests against Jellyfin 12.0.0, 12.1.0
+    and the newest 12.x on NuGet, and the plugin zip as a build artifact.
+  - A release workflow for `v*` tags: CI, a GitHub release with the zip, and `manifest.json`
+    on GitHub Pages as a Jellyfin plugin repository.
+  - `scripts/check-version.sh`: the version in `Directory.Build.props`, `build.yaml`, the dev
+    compose file and the README (and a release tag) must agree.
+  - GPL-3.0 license.
 - Phase 4, manual overrides (admins only, Jellyfin's `RequiresElevation` policy):
   - `PUT /KasuMeta/Items/{itemId}/{locale}`: sets manual names, overviews, taglines, sort
     names and images for one locale, in one transaction. A manual value always replaces what is

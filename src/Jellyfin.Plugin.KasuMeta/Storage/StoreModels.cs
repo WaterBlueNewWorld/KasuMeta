@@ -100,6 +100,13 @@ public sealed record ManualEdit(
     IReadOnlyCollection<string> RemoveFields,
     IReadOnlyCollection<string> RemoveImages);
 
+/// <summary>How the library's fetches stand, for the status page.</summary>
+/// <param name="Counts">Items per fetch status; a status no item has is absent.</param>
+/// <param name="RecentErrors">The newest failed fetches, newest first.</param>
+public sealed record FetchSummary(
+    IReadOnlyDictionary<FetchStatus, int> Counts,
+    IReadOnlyList<FetchState> RecentErrors);
+
 /// <summary>A localized name that matched a search.</summary>
 /// <param name="ItemId">The Jellyfin item id.</param>
 /// <param name="Locale">The locale of the matching name.</param>

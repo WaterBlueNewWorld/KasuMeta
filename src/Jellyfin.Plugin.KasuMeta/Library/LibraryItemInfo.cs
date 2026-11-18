@@ -27,6 +27,9 @@ public sealed record LibraryItemInfo(
     int? SeasonNumber = null,
     int? EpisodeNumber = null)
 {
+    /// <summary>Gets the item's name in the library (Jellyfin's own, not localized), for display only.</summary>
+    public string? Name { get; init; }
+
     /// <summary>
     /// Gets the inputs a fetch depends on, as saved in <c>fetch_state</c>: the item's provider ids,
     /// plus for seasons and episodes the series' TMDB id and the numbers. When this changes, the

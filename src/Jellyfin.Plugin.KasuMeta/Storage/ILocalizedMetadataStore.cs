@@ -93,6 +93,11 @@ public interface ILocalizedMetadataStore
     /// <returns>How many rows were written or removed.</returns>
     Task<int> ApplyManualEditAsync(ManualEdit edit, CancellationToken cancellationToken);
 
+    /// <summary>Counts items per fetch status and lists the newest failures.</summary>
+    /// <param name="recentErrors">How many failed items to list at most.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    Task<FetchSummary> GetFetchSummaryAsync(int recentErrors, CancellationToken cancellationToken);
+
     /// <summary>Removes everything stored for an item (it left the library).</summary>
     Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken);
 }
