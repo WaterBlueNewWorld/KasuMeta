@@ -25,22 +25,23 @@ jobs:
     permissions:
       contents: write # create the release and push gh-pages
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Tag matches the plugin version
         run: bash scripts/check-version.sh "$GITHUB_REF_NAME"
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Build the plugin zip
         id: build
         run: |
           pip install jprm==1.1.0
-          zip="$(jprm --verbosity=info plugin build . -o artifacts)"
+          mkdir -p artifacts  # jprm does not create it
+          zip="$(jprm --verbosity=info plugin build . -o "$PWD/artifacts")"
           echo "zip=$zip" >>"$GITHUB_OUTPUT"
           echo "name=$(basename "$zip")" >>"$GITHUB_OUTPUT"
 
