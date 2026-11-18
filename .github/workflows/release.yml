@@ -4,7 +4,8 @@ name: Release
 #   1. the CI workflow runs (tests on every Jellyfin line, package);
 #   2. a GitHub release is created with the plugin zip;
 #   3. manifest.json on the gh-pages branch gains the version, so Jellyfin servers using
-#      https://<owner>.github.io/<repo>/manifest.json as a plugin repository offer it.
+#      https://kasu-meta.kasukasu.com/manifest.json as a plugin repository offer it (the
+#      custom domain of the GitHub Pages site, set by the CNAME file on gh-pages).
 # One-time setup after the first release (which creates gh-pages):
 # Settings > Pages > Deploy from a branch > gh-pages, / (root).
 
@@ -87,4 +88,4 @@ jobs:
           git -C site add manifest.json .nojekyll
           git -C site commit -m "KasuMeta $GITHUB_REF_NAME"
           git -C site push origin gh-pages
-          echo "Plugin repository: https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/manifest.json"
+          echo "Plugin repository: https://kasu-meta.kasukasu.com/manifest.json"

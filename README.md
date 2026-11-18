@@ -58,7 +58,7 @@ Jellyfin 10.11 and older can't load the plugin: Jellyfin 12 moved to .NET 10.
 **From the plugin repository** (once the first release is published):
 
 1. Dashboard › Plugins › Repositories › add
-   `https://waterbluenewworld.github.io/KasuMeta/manifest.json`.
+   `https://kasu-meta.kasukasu.com/manifest.json`.
 2. Install KasuMeta from the Catalog and restart Jellyfin.
 
 **By hand:**

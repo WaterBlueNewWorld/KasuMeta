@@ -98,14 +98,19 @@ has created the branch (GitHub only offers branches that exist):
 Within a minute or two the manifest is online. Later releases only update the branch; Pages
 republishes on its own.
 
+The site is served on the custom domain `kasu-meta.kasukasu.com` (Settings › Pages › Custom
+domain), which GitHub keeps in a `CNAME` file on `gh-pages`. The release workflow only rewrites
+`manifest.json` and `.nojekyll`, so the file stays; don't delete it. The old
+`waterbluenewworld.github.io/KasuMeta/` address redirects to the domain.
+
 ```sh
-curl -fsS https://waterbluenewworld.github.io/KasuMeta/manifest.json
+curl -fsS https://kasu-meta.kasukasu.com/manifest.json
 ```
 
 ## 5. Check from a Jellyfin server
 
 On a Jellyfin 12.x server: Dashboard › Plugins › Repositories › add
-`https://waterbluenewworld.github.io/KasuMeta/manifest.json`. KasuMeta and the new version
+`https://kasu-meta.kasukasu.com/manifest.json`. KasuMeta and the new version
 then appear in the Catalog. Servers that already have it installed are offered the update.
 
 ## If something goes wrong
