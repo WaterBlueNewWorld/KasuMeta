@@ -6,6 +6,12 @@ the release's three parts plus `.0` (release 1.0.0 is plugin version 1.0.0.0).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-18
+
+Requires **Jellyfin 12.x** (built against 12.0, tested on 12.0, 12.1 and 12.4) and a TMDB or a
+TVDB API key. Existing installs keep working as before: TMDB stays the only provider until TVDB
+is turned on.
+
 ### Added
 - **TVDB as a metadata provider:** titles, overviews, taglines and localized posters, logos and
   backdrops from TheTVDB (API v4; needs a TVDB key, plus the subscriber PIN for user-supported

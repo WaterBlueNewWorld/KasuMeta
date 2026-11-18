@@ -27,7 +27,7 @@ services:
       - -c
       - |
         set -e
-        dest=/config/plugins/KasuMeta_1.0.0.0
+        dest=/config/plugins/KasuMeta_1.1.0.0
         # Drop folders of other versions, or Jellyfin would find two copies of the plugin.
         for old in /config/plugins/KasuMeta_*; do
           [ "$$old" = "$$dest" ] || rm -rf "$$old"
