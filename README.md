@@ -132,7 +132,8 @@ Every push and pull request runs [CI](.github/workflows/ci.yml): the version che
 against Jellyfin 12.0.0, 12.1.0 and the newest 12.x on NuGet, and the plugin zip (kept as a
 build artifact).
 
-To release, for example 0.1.0:
+Releases are cut by pushing a version tag. [RELEASING.md](RELEASING.md) has the full procedure,
+step by step, with the commands. In short, for example for 0.1.0:
 
 1. Set the version in `Directory.Build.props` (`0.1.0.0`), `build.yaml` (with a new
    `changelog`), the plugin folder in `docker/dev/compose.yaml` and the install path in this
