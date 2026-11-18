@@ -21,3 +21,17 @@ They contain no credentials. To re-record, send the same requests with a key and
 files; then fix whatever assertions TMDB's edits have changed (titles, chosen poster paths).
 
 Data © TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+## AniList
+
+Recorded on 2026-11-17 from `POST https://graphql.anilist.co` (no key), with the query in
+`AniListClient.Query` and `{"id": N}` as variables. AniList's Cloudflare front refuses requests
+without a recognisable User-Agent (error 1010), so send one when re-recording.
+
+| File | Media id |
+|---|---|
+| `anilist/media-104051.json` | 104051 (Magia Record, season 1) |
+| `anilist/media-98658.json` | 98658 (Revue Starlight) |
+| `anilist/media-404.json` | 999999999 (HTTP 404 body) |
+
+Data from [AniList](https://anilist.co).

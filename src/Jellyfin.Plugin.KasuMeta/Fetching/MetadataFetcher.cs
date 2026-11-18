@@ -4,6 +4,7 @@ using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Library;
 using Jellyfin.Plugin.KasuMeta.Localization;
 using Jellyfin.Plugin.KasuMeta.Providers;
+using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
 using Jellyfin.Plugin.KasuMeta.Storage;
 
@@ -29,22 +30,25 @@ public enum FetchResult
 }
 
 /// <summary>
-/// Fetches one item's translations from TMDB and stores them. Keeps only locales in the same
-/// fallback group as an enabled locale (all Spanish variants when es-MX is enabled), so the
-/// server can fall back es-MX → es-ES without storing all ~40 TMDB languages.
+/// Fetches one item's translations from TMDB, then from AniList for movies and series with an
+/// AniList id, and stores them. AniList only fills what no other source holds, so the order per
+/// field and locale is manual, TMDB, AniList. Keeps only locales in the same fallback group as an
+/// enabled locale (all Spanish variants when es-MX is enabled), so the server can fall back
+/// es-MX → es-ES without storing all ~40 TMDB languages.
 /// </summary>
 public sealed class MetadataFetcher
 {
     /// <summary>
     /// Version of what a fetch stores: 1 = text, 2 = adds images, 3 = adds the item's kind (for
-    /// search). Raise it whenever a fetch starts storing something new; the backfill then
-    /// re-queues items fetched by older builds.
+    /// search), 4 = adds AniList titles. Raise it whenever a fetch starts storing something new;
+    /// the backfill then re-queues items fetched by older builds.
     /// </summary>
-    public const int FetchVersion = 3;
+    public const int FetchVersion = 4;
 
     private readonly ILibraryItemSource _library;
     private readonly ILocalizedMetadataStore _store;
     private readonly ITmdbClient _tmdb;
+    private readonly IAniListClient _aniList;
     private readonly IKasuMetaConfigProvider _config;
     private readonly TimeProvider _time;
 
@@ -52,12 +56,14 @@ public sealed class MetadataFetcher
         ILibraryItemSource library,
         ILocalizedMetadataStore store,
         ITmdbClient tmdb,
+        IAniListClient aniList,
         IKasuMetaConfigProvider config,
         TimeProvider time)
     {
         _library = library;
         _store = store;
         _tmdb = tmdb;
+        _aniList = aniList;
         _config = config;
         _time = time;
     }
@@ -84,41 +90,144 @@ public sealed class MetadataFetcher
             }
         }
 
-        TmdbTitle? title;
-        try
+        var (tmdbCall, tmdbSkipReason) = PlanCall(item);
+        var aniListId = _config.Current.AniListEnabled ? AniListId(item) : null;
+        if (aniListId is null)
         {
-            var (call, skipReason) = PlanCall(item);
-            if (call is null)
-            {
-                await SetStateAsync(item, snapshot, FetchStatus.Skipped, skipReason, cancellationToken).ConfigureAwait(false);
-                return FetchResult.Skipped;
-            }
-
-            title = await call(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
-        {
-            await SetStateAsync(item, snapshot, FetchStatus.Error, ex.Message, cancellationToken).ConfigureAwait(false);
-            return FetchResult.Failed;
+            // AniList is off, or the item lost its id (re-identified): its AniList titles go.
+            await _store.ReplaceProviderFieldsAsync(itemId, MetadataSources.AniList, [], cancellationToken).ConfigureAwait(false);
         }
 
-        if (title is null)
+        if (tmdbCall is null && aniListId is null)
         {
-            await SetStateAsync(item, snapshot, FetchStatus.Skipped, "TMDB has no such title (404)", cancellationToken)
-                .ConfigureAwait(false);
+            await SetStateAsync(item, snapshot, FetchStatus.Skipped, tmdbSkipReason, cancellationToken).ConfigureAwait(false);
             return FetchResult.Skipped;
         }
 
+        // Each provider is tried on its own: one failing doesn't throw away the other's text.
+        // TMDB goes first so that AniList can fill only what TMDB (or an admin) left empty.
         var enabled = _config.Current.EnabledLocales;
-        await _store
-            .ReplaceProviderFieldsAsync(itemId, MetadataSources.Tmdb, ToFields(itemId, title.Translations, enabled), cancellationToken)
-            .ConfigureAwait(false);
-        await _store
-            .ReplaceProviderImagesAsync(itemId, MetadataSources.Tmdb, ToImages(itemId, title.Images, enabled), cancellationToken)
-            .ConfigureAwait(false);
+        var fetched = false;
+        var errors = new List<string>();
+        var notes = new List<string>();
+        if (tmdbCall is null)
+        {
+            notes.Add(tmdbSkipReason!);
+        }
+        else
+        {
+            try
+            {
+                if (await tmdbCall(cancellationToken).ConfigureAwait(false) is { } title)
+                {
+                    await _store
+                        .ReplaceProviderFieldsAsync(itemId, MetadataSources.Tmdb, ToFields(itemId, title.Translations, enabled), cancellationToken)
+                        .ConfigureAwait(false);
+                    await _store
+                        .ReplaceProviderImagesAsync(itemId, MetadataSources.Tmdb, ToImages(itemId, title.Images, enabled), cancellationToken)
+                        .ConfigureAwait(false);
+                    fetched = true;
+                }
+                else
+                {
+                    notes.Add("TMDB has no such title (404)");
+                }
+            }
+            catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
+            {
+                errors.Add(ex.Message);
+            }
+        }
+
+        if (aniListId is { } mediaId)
+        {
+            try
+            {
+                if (await _aniList.GetMediaAsync(mediaId, cancellationToken).ConfigureAwait(false) is { } translations)
+                {
+                    var held = (await _store.GetFieldsAsync([itemId], null, cancellationToken).ConfigureAwait(false))
+                        .Where(r => r.Source != MetadataSources.AniList)
+                        .Select(r => (r.Locale, r.Field))
+                        .ToHashSet();
+                    var rows = ToAniListFields(itemId, translations, enabled)
+                        .Where(r => !held.Contains((r.Locale, r.Field)))
+                        .ToList();
+                    await _store
+                        .ReplaceProviderFieldsAsync(itemId, MetadataSources.AniList, rows, cancellationToken)
+                        .ConfigureAwait(false);
+                    fetched = true;
+                }
+                else
+                {
+                    notes.Add("AniList has no such title (404)");
+                }
+            }
+            catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
+            {
+                errors.Add("AniList: " + ex.Message);
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            await SetStateAsync(item, snapshot, FetchStatus.Error, string.Join("; ", errors), cancellationToken).ConfigureAwait(false);
+            return FetchResult.Failed;
+        }
+
+        if (!fetched)
+        {
+            await SetStateAsync(item, snapshot, FetchStatus.Skipped, string.Join("; ", notes), cancellationToken).ConfigureAwait(false);
+            return FetchResult.Skipped;
+        }
+
         await SetStateAsync(item, snapshot, FetchStatus.Ok, null, cancellationToken).ConfigureAwait(false);
         return FetchResult.Fetched;
     }
+
+    /// <summary>
+    /// Turns AniList's text into field rows, keeping the enabled locales' fallback groups, plus
+    /// romanized titles (<c>ja-Latn</c>, …) whether enabled or not: people type an anime's romaji
+    /// name into search whatever language they read. Romanized locales are a fallback group of
+    /// their own, so storing them never changes what another locale is served.
+    /// </summary>
+    internal static IReadOnlyList<LocalizedField> ToAniListFields(
+        Guid itemId,
+        IReadOnlyList<AniListTranslation> translations,
+        IReadOnlyCollection<string> enabledLocales)
+    {
+        var groups = Groups(enabledLocales);
+        var rows = new List<LocalizedField>();
+        foreach (var t in translations.Where(t => groups.Contains(LocaleChain.FallbackGroup(t.Locale)) || IsRomanized(t.Locale)))
+        {
+            if (t.Title is not null)
+            {
+                rows.Add(new LocalizedField(itemId, t.Locale, MetadataFields.Name, t.Title, MetadataSources.AniList));
+            }
+
+            if (t.Overview is not null)
+            {
+                rows.Add(new LocalizedField(itemId, t.Locale, MetadataFields.Overview, t.Overview, MetadataSources.AniList));
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>Whether a locale is a romanization with a fallback group of its own (<c>ja-Latn</c>).</summary>
+    private static bool IsRomanized(string locale) =>
+        LocaleChain.FallbackGroup(locale).EndsWith("-Latn", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The item's AniList media id. Only movies and series: AniList has no episodes, and treats
+    /// each season as a title of its own, which Jellyfin's seasons don't map to.
+    /// </summary>
+    private static int? AniListId(LibraryItemInfo item) =>
+        item.Kind is ItemKind.Movie or ItemKind.Series
+        && item.ProviderIds.TryGetValue(ProviderNames.AniList, out var raw)
+        && int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+        && id > 0
+            ? id
+            : null;
 
     /// <summary>Turns images into rows, keeping the enabled locales' fallback groups.</summary>
     internal static IReadOnlyList<LocalizedImage> ToImages(

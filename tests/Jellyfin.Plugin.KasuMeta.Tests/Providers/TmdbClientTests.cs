@@ -3,6 +3,7 @@ using System.Text;
 using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Providers;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
+using Jellyfin.Plugin.KasuMeta.Tests.Support;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jellyfin.Plugin.KasuMeta.Tests.Providers;
@@ -414,41 +415,5 @@ public class TmdbClientTests
         public PluginConfiguration Current => config;
 
         public Version PluginVersion => new(0, 0, 1, 0);
-    }
-
-    private sealed class FakeHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
-    }
-
-    private sealed class FakeHandler : HttpMessageHandler
-    {
-        private readonly Queue<Func<HttpResponseMessage>> _responses = new();
-
-        public List<HttpRequestMessage> Requests { get; } = [];
-
-        public void Respond(HttpStatusCode status, string json, int? retryAfterSeconds = null) =>
-            _responses.Enqueue(() =>
-            {
-                var response = new HttpResponseMessage(status)
-                {
-                    Content = new StringContent(json, Encoding.UTF8, "application/json"),
-                };
-                if (retryAfterSeconds is { } seconds)
-                {
-                    response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(seconds));
-                }
-
-                return response;
-            });
-
-        public void Fail(Exception exception) => _responses.Enqueue(() => throw exception);
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Requests.Add(request);
-            return Task.FromResult(_responses.Dequeue()());
-        }
     }
 }

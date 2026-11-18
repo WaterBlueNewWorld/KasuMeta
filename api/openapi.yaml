@@ -18,8 +18,14 @@ info:
       normalized.
     - **Fallback, per field and per image type:** exact locale, then the bare language (`es`), then another region
       of the same language in the server's enabled-locales order (`es-ES`), when the server
-      has `FallbackToBaseLanguage` on. Traditional and Simplified Chinese never stand in for
-      each other. `ResolvedLocale` says which one was served.
+      has `FallbackToBaseLanguage` on. Scripts never stand in for each other: Traditional and
+      Simplified Chinese stay apart, and so do romanized titles (`ja-Latn`, romaji) and
+      Japanese-script ones (`ja-JP`). `ResolvedLocale` says which one was served.
+    - **Sources:** TMDB first. For movies and series with an AniList id, AniList fills what TMDB
+      lacks: romaji as `ja-Latn` (`zh-Latn`, `ko-Latn` for Chinese and Korean titles), and English
+      or native titles and English synopses TMDB has none for. Romaji is stored even when
+      `ja-Latn` isn't among the enabled locales, so Search finds an anime by its romaji name from
+      any locale; it's served only when `ja-Latn` itself is asked for. A manual value beats both.
     - **Images:** localized art from TMDB (posters as `Primary`, `Logo`, `Backdrop`), chosen per
       locale: raster before SVG, then by TMDB votes. `Url` is the original file; TMDB serves
       smaller copies at the same path with `/original/` replaced by `/w342/`, `/w500/` or `/w780/`
@@ -35,6 +41,11 @@ info:
       `ApiVersion`; `Info.Features` says what a given build has.
     - **Visibility:** items the caller can't see are reported exactly like items with no data
       (`Missing` / 404), so the API never reveals hidden titles.
+    - **Overrides (admins):** `Items/{itemId}/All`, `PUT Items/{itemId}/{locale}` and
+      `Items/{itemId}/Refresh` need an administrator's token or an API key (Jellyfin's
+      `RequiresElevation` policy); anyone else gets 403. A manual value has `Source` `manual`.
+      When it's `Locked`, provider refreshes never replace it. It's served through the read
+      routes and found by search like any other value.
     - **Examples:** `api/fixtures/*.json` were captured from a live Jellyfin 12.1 server and are
       checked by the plugin's tests; the client's tests can use the same files.
 servers:
@@ -109,6 +120,84 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404":
           description: Nothing to serve. The item isn't fetched yet, has no translation in any fallback locale, is unknown, or isn't visible to the caller.
+  /KasuMeta/Items/{itemId}/All:
+    get:
+      summary: "Admin: every stored locale of one item"
+      description: >
+        What a translations editor loads. Every stored locale as stored, with no fallback, so each
+        value's `ResolvedLocale` is its own key. Includes each value's `Source` and `Locked`, and the
+        item's fetch state.
+      parameters:
+        - { $ref: "#/components/parameters/ItemId" }
+      responses:
+        "200":
+          description: The stored values. `Locales` is empty when nothing is stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemTranslations" }
+              example: { $ref: "fixtures/translations.json" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/NotAdmin" }
+        "404":
+          description: No such item in the library.
+  /KasuMeta/Items/{itemId}/{locale}:
+    put:
+      summary: "Admin: set or remove manual values of one item in one locale"
+      description: >
+        Only the keys present are touched, in one transaction. A value always replaces what is
+        stored, locked or not, as a `manual` value. `null` removes the stored value for this locale,
+        manual or not, and queues a re-fetch, so the provider's value comes back shortly if it has
+        one. The response is the item's admin view after the change, before any re-fetch. Evict
+        the client's cached overlay for the item afterwards.
+      parameters:
+        - { $ref: "#/components/parameters/ItemId" }
+        - name: locale
+          in: path
+          required: true
+          description: BCP-47; any valid locale, not only the enabled ones.
+          schema: { type: string, example: es-MX }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItemOverridesRequest" }
+            example:
+              Fields:
+                Name: { Value: "El viaje de Chihiro" }
+                Tagline: { Value: "Corrección rápida", Locked: false }
+                Overview: null
+              Images:
+                Logo: null
+      responses:
+        "200":
+          description: Applied.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemTranslations" }
+        "400":
+          description: >
+            Bad locale, unknown key, a key given twice (`SortName` and `sort_name`), empty text,
+            text over 10,000 characters, an image URL that isn't absolute http(s) or is over 2,048
+            characters, or nothing to change. The body is a message string.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/NotAdmin" }
+        "404":
+          description: No such item in the library.
+  /KasuMeta/Items/{itemId}/Refresh:
+    post:
+      summary: "Admin: re-fetch one item from its providers"
+      description: >
+        Queues a forced fetch. Locked values stay. The fetch is done when `Fetch.LastFetch` in
+        `Items/{itemId}/All` is newer than the request.
+      parameters:
+        - { $ref: "#/components/parameters/ItemId" }
+      responses:
+        "202":
+          description: Queued.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/NotAdmin" }
+        "404":
+          description: No such item in the library.
   /KasuMeta/Search:
     get:
       summary: Find items by their localized names
@@ -154,9 +243,17 @@ components:
       in: header
       name: Authorization
       description: 'MediaBrowser Client="…", Device="…", DeviceId="…", Version="…", Token="<access token>"'
+  parameters:
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
   responses:
     Unauthorized:
       description: No or invalid Jellyfin token.
+    NotAdmin:
+      description: The token belongs to a user who isn't an administrator.
   schemas:
     KasuMetaInfo:
       type: object
@@ -175,7 +272,7 @@ components:
           description: What this build serves. Unknown values are to be ignored.
           items:
             type: string
-            enum: [text, images, search]
+            enum: [text, images, search, overrides]
     BatchRequest:
       type: object
       required: [ItemIds, Locale]
@@ -265,6 +362,77 @@ components:
           description: The stored locale served; differs from the request after a fallback.
         Locked:
           type: boolean
+
+    ItemTranslations:
+      type: object
+      required: [ItemId, Locales]
+      properties:
+        ItemId:
+          type: string
+          description: Dashless Jellyfin item id.
+        Locales:
+          type: object
+          description: Stored values keyed by locale, without fallback; empty when nothing is stored.
+          additionalProperties: { $ref: "#/components/schemas/ItemOverlay" }
+        Fetch: { $ref: "#/components/schemas/ItemFetchInfo" }
+    ItemFetchInfo:
+      type: object
+      description: The item's last provider fetch; absent if the item was never queued.
+      required: [Status]
+      properties:
+        Status:
+          type: string
+          enum: [pending, ok, error, skipped]
+          description: "`skipped`: nothing to fetch, e.g. no TMDB id."
+        LastFetch: { type: string, format: date-time }
+        LastError:
+          type: string
+          description: Why the last fetch failed or was skipped.
+    ItemOverridesRequest:
+      type: object
+      description: At least one entry in Fields or Images.
+      properties:
+        Fields:
+          type: object
+          description: >
+            Keyed by field (Name, Overview, Tagline, SortName; any casing, `sort_name` too).
+            `null` removes the stored value.
+          additionalProperties:
+            nullable: true
+            allOf: [{ $ref: "#/components/schemas/ManualFieldValue" }]
+        Images:
+          type: object
+          description: Keyed by image type (Primary, Logo, Backdrop, Thumb; any casing). `null` removes the stored image.
+          additionalProperties:
+            nullable: true
+            allOf: [{ $ref: "#/components/schemas/ManualImageValue" }]
+    ManualFieldValue:
+      type: object
+      required: [Value]
+      properties:
+        Value:
+          type: string
+          maxLength: 10000
+          description: Trimmed; must not be empty.
+        Locked:
+          type: boolean
+          default: true
+          description: False sets a quick correction that the next provider fetch may replace.
+    ManualImageValue:
+      type: object
+      required: [Url]
+      properties:
+        Url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: >
+            Absolute http(s) URL. Only `image.tmdb.org` URLs can be resized by swapping
+            `/original/`; serve other hosts as they are. Width and Height are not known for manual
+            images.
+        Locked:
+          type: boolean
+          default: true
 
     SearchResponse:
       type: object

@@ -38,6 +38,18 @@
                     <input id="TvdbApiKey" name="TvdbApiKey" type="password" is="emby-input" autocomplete="off" />
                 </div>
 
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="AniListEnabled" name="AniListEnabled" type="checkbox" is="emby-checkbox" />
+                        <span>Anime titles from AniList</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        For items with an AniList id: English and native titles where TMDB has none, and
+                        romaji titles, which search always finds. Add ja-Latn above to also offer
+                        romaji as a display language. No key needed.
+                    </div>
+                </div>
+
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="RefreshIntervalHours">Refresh interval (hours)</label>
                     <input id="RefreshIntervalHours" name="RefreshIntervalHours" type="number" min="1" is="emby-input" />
@@ -64,6 +76,7 @@
                     document.querySelector('#FallbackToBaseLanguage').checked = config.FallbackToBaseLanguage;
                     document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
                     document.querySelector('#TvdbApiKey').value = config.TvdbApiKey || '';
+                    document.querySelector('#AniListEnabled').checked = config.AniListEnabled;
                     document.querySelector('#RefreshIntervalHours').value = config.RefreshIntervalHours;
                     Dashboard.hideLoadingMsg();
                 });
@@ -78,6 +91,7 @@
                     config.FallbackToBaseLanguage = document.querySelector('#FallbackToBaseLanguage').checked;
                     config.TmdbApiKey = document.querySelector('#TmdbApiKey').value.trim();
                     config.TvdbApiKey = document.querySelector('#TvdbApiKey').value.trim();
+                    config.AniListEnabled = document.querySelector('#AniListEnabled').checked;
                     config.RefreshIntervalHours = parseInt(document.querySelector('#RefreshIntervalHours').value, 10) || 168;
                     ApiClient.updatePluginConfiguration(KasuMetaConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

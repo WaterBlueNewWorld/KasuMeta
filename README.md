@@ -51,13 +51,14 @@ dotnet build -c Release
 docker compose -f docker/dev/compose.yaml up -d
 bash scripts/dev-server-setup.sh     # first run: wizard, users, libraries; writes .env (git-ignored)
 bash scripts/smoke-test.sh           # live checks: plugin loaded, database, auth
-bash scripts/e2e-test.sh             # live read-path checks (needs a TMDB key on the plugin page)
+bash scripts/dev-anilist-setup.sh    # once, after the scan: AniList ids for the anime series
+bash scripts/e2e-test.sh             # live checks (needs a TMDB key on the plugin page)
 docker restart kasumeta-jellyfin     # after each rebuild
 ```
 
 ## API
 
-Four routes, all behind Jellyfin's own sign-in. JSON is PascalCase, as Jellyfin serializes, and
+All routes sit behind Jellyfin's own sign-in. JSON is PascalCase, as Jellyfin serializes, and
 null fields are left out. The contract is [`api/openapi.yaml`](api/openapi.yaml), with examples
 captured from a live server in [`api/fixtures`](api/fixtures).
 
@@ -67,10 +68,24 @@ captured from a live server in [`api/fixtures`](api/fixtures).
 | `POST /KasuMeta/Items/Batch` | Localized titles, overviews, taglines and images for up to 200 items (one call per grid page) |
 | `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's overlay (detail page) |
 | `GET /KasuMeta/Search?q=cabana&locale=es-MX` | Find items by their localized names, in any enabled language |
+| `GET /KasuMeta/Items/{itemId}/All` | Admin: every stored locale of an item, with sources, locks and fetch state |
+| `PUT /KasuMeta/Items/{itemId}/{locale}` | Admin: set (and lock) or remove manual values |
+| `POST /KasuMeta/Items/{itemId}/Refresh` | Admin: re-fetch an item from its providers |
 
 Search ignores case and accents, treats the last word as a prefix, and matches Chinese, Japanese,
 Korean and Thai text anywhere in a title. It returns ids; the app fetches the items from Jellyfin.
-`Info.Features` lists what a given plugin build serves (`text`, `images`, `search`).
+
+Titles come from TMDB. Anime with an AniList id (set by Jellyfin's AniList metadata plugin, or by
+hand under the item's External IDs) also get AniList's titles where TMDB has none. Their romaji
+title is always stored as `ja-Latn`, so search finds "mahou shoujo" from any language, but it is
+only served to a client that asks for `ja-Latn`: romaji and Japanese script never stand in for
+each other.
+
+The admin routes need an administrator's token or an API key. A manual value is locked by
+default: provider refreshes never replace it. Sending `null` for a field removes it and
+re-fetches, so the provider's value comes back.
+
+`Info.Features` lists what a given plugin build serves (`text`, `images`, `search`, `overrides`).
 
 ## Status
 
@@ -80,6 +95,7 @@ Korean and Thai text anywhere in a title. It returns ids; the app fetches the it
     library hooks, scheduled tasks, and the batch and item endpoints.
   - Phase 2: localized posters, logos and backdrops per locale.
   - Phase 3: search over localized titles.
+  - Phase 4: manual overrides (edit, lock, remove, refresh) and anime titles from AniList.
   - Verified live on Jellyfin 12.1.
-- **Next:** Phase 4, manual overrides (edit and lock translations) and anime titles from AniList.
+- **Next:** Phase 5, hardening and distribution (CI, a plugin repository manifest).
 - **Not supported yet:** Jellyfin 10.11. It's kept as a future option.

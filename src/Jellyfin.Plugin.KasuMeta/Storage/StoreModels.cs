@@ -82,6 +82,24 @@ public sealed record LocalizedImage(
     public DateTimeOffset UpdatedAt { get; init; }
 }
 
+/// <summary>
+/// An admin's edit of one item in one locale, applied in one transaction. Set rows always win,
+/// locked or not; removed keys are deleted whatever their source.
+/// </summary>
+/// <param name="ItemId">The Jellyfin item id.</param>
+/// <param name="Locale">The normalized BCP-47 locale every row belongs to.</param>
+/// <param name="SetFields">Manual text values to write (source <see cref="MetadataSources.Manual"/>).</param>
+/// <param name="SetImages">Manual images to write (source <see cref="MetadataSources.Manual"/>).</param>
+/// <param name="RemoveFields">Fields (<see cref="MetadataFields"/>) whose stored value goes away.</param>
+/// <param name="RemoveImages">Image types (<see cref="LocalizedImageTypes"/>) whose stored image goes away.</param>
+public sealed record ManualEdit(
+    Guid ItemId,
+    string Locale,
+    IReadOnlyCollection<LocalizedField> SetFields,
+    IReadOnlyCollection<LocalizedImage> SetImages,
+    IReadOnlyCollection<string> RemoveFields,
+    IReadOnlyCollection<string> RemoveImages);
+
 /// <summary>A localized name that matched a search.</summary>
 /// <param name="ItemId">The Jellyfin item id.</param>
 /// <param name="Locale">The locale of the matching name.</param>
@@ -119,7 +137,7 @@ public enum FetchStatus
 /// <param name="LastError">The error message when <paramref name="Status"/> is Error.</param>
 /// <param name="FetchVersion">
 /// Which fetch logic produced this state (1 = text only, 2 = adds images, 3 = adds the item's
-/// kind). An item below the current version is fetched again, so new data reaches items fetched
+/// kind, 4 = adds AniList titles). An item below the current version is fetched again, so new data reaches items fetched
 /// by older builds.
 /// </param>
 /// <param name="Kind">The item's kind, or null if not recorded yet.</param>

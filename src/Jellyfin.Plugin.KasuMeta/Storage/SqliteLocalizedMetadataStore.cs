@@ -32,6 +32,24 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         WHERE localized_image.locked = 0 OR excluded.locked = 1;
         """;
 
+    // An admin's write: no WHERE, so it replaces a locked row too.
+    private const string ManualFieldSql = """
+        INSERT INTO localized_field (item_id, locale, field, value, source, locked, updated_at)
+        VALUES ($item, $locale, $key, $value, $source, $locked, $now)
+        ON CONFLICT (item_id, locale, field) DO UPDATE SET
+          value = excluded.value, source = excluded.source,
+          locked = excluded.locked, updated_at = excluded.updated_at;
+        """;
+
+    private const string ManualImageSql = """
+        INSERT INTO localized_image (item_id, locale, image_type, url, source, locked, updated_at, width, height)
+        VALUES ($item, $locale, $key, $value, $source, $locked, $now, $width, $height)
+        ON CONFLICT (item_id, locale, image_type) DO UPDATE SET
+          url = excluded.url, source = excluded.source,
+          locked = excluded.locked, updated_at = excluded.updated_at,
+          width = excluded.width, height = excluded.height;
+        """;
+
     private readonly KasuMetaDatabase _database;
     private readonly TimeProvider _time;
 
@@ -387,6 +405,85 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     }
 
     /// <inheritdoc />
+    public async Task<int> ApplyManualEditAsync(ManualEdit edit, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        RequireLocale(edit.Locale);
+        foreach (var f in edit.SetFields)
+        {
+            RequireManualRow(f.ItemId, f.Locale, f.Source, edit);
+            RequireKnown(f.Field, MetadataFields.All, nameof(LocalizedField.Field));
+        }
+
+        foreach (var i in edit.SetImages)
+        {
+            RequireManualRow(i.ItemId, i.Locale, i.Source, edit);
+            RequireKnown(i.ImageType, LocalizedImageTypes.All, nameof(LocalizedImage.ImageType));
+        }
+
+        foreach (var field in edit.RemoveFields)
+        {
+            RequireKnown(field, MetadataFields.All, nameof(LocalizedField.Field));
+        }
+
+        foreach (var type in edit.RemoveImages)
+        {
+            RequireKnown(type, LocalizedImageTypes.All, nameof(LocalizedImage.ImageType));
+        }
+
+        var now = _time.GetUtcNow().ToUnixTimeSeconds();
+        var changed = 0;
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            var transaction = (SqliteTransaction)await connection
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                // Table and column names are this class's own literals, never input.
+                foreach (var (table, column, keys) in new[]
+                         {
+                             ("localized_field", "field", edit.RemoveFields),
+                             ("localized_image", "image_type", edit.RemoveImages),
+                         })
+                {
+                    foreach (var key in keys.Distinct(StringComparer.Ordinal))
+                    {
+                        await using var delete = connection.CreateCommand();
+                        delete.Transaction = transaction;
+                        delete.CommandText = $"DELETE FROM {table} WHERE item_id = $item AND locale = $locale AND {column} = $key;";
+                        delete.Parameters.AddWithValue("$item", FormatId(edit.ItemId));
+                        delete.Parameters.AddWithValue("$locale", edit.Locale);
+                        delete.Parameters.AddWithValue("$key", key);
+                        changed += await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                changed += await WriteRowsAsync(
+                        connection,
+                        transaction,
+                        ManualFieldSql,
+                        edit.SetFields.Select(f => (f.ItemId, f.Locale, f.Field, f.Value, f.Source, f.Locked, (int?)null, (int?)null)),
+                        now,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                changed += await WriteRowsAsync(
+                        connection,
+                        transaction,
+                        ManualImageSql,
+                        edit.SetImages.Select(i => (i.ItemId, i.Locale, i.ImageType, i.Url, i.Source, i.Locked, i.Width, i.Height)),
+                        now,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return changed;
+    }
+
+    /// <inheritdoc />
     public async Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken)
     {
         var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -454,6 +551,14 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         }
     }
 
+    private static void RequireManualRow(Guid itemId, string locale, string source, ManualEdit edit)
+    {
+        if (itemId != edit.ItemId || locale != edit.Locale || source != MetadataSources.Manual)
+        {
+            throw new ArgumentException("Every row must be a manual row of the edit's item and locale.", nameof(edit));
+        }
+    }
+
     private static void RequireLocale(string locale)
     {
         if (string.IsNullOrWhiteSpace(locale))
@@ -469,7 +574,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         (string Table, Guid ItemId, string Source)? replaceUnlocked = null)
     {
         var now = _time.GetUtcNow().ToUnixTimeSeconds();
-        var written = 0;
+        int written;
         var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
         {
@@ -490,38 +595,52 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                     await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                await using var command = connection.CreateCommand();
-                command.Transaction = transaction;
-                command.CommandText = sql;
-                var item = command.Parameters.Add("$item", SqliteType.Text);
-                var locale = command.Parameters.Add("$locale", SqliteType.Text);
-                var key = command.Parameters.Add("$key", SqliteType.Text);
-                var value = command.Parameters.Add("$value", SqliteType.Text);
-                var source = command.Parameters.Add("$source", SqliteType.Text);
-                var locked = command.Parameters.Add("$locked", SqliteType.Integer);
-                var hasSize = sql.Contains("$width", StringComparison.Ordinal);
-                var width = hasSize ? command.Parameters.Add("$width", SqliteType.Integer) : null;
-                var height = hasSize ? command.Parameters.Add("$height", SqliteType.Integer) : null;
-                command.Parameters.AddWithValue("$now", now);
-
-                foreach (var row in rows)
-                {
-                    item.Value = FormatId(row.ItemId);
-                    locale.Value = row.Locale;
-                    key.Value = row.Key;
-                    value.Value = row.Value;
-                    source.Value = row.Source;
-                    locked.Value = row.Locked ? 1 : 0;
-                    if (width is not null && height is not null)
-                    {
-                        width.Value = (object?)row.Width ?? DBNull.Value;
-                        height.Value = (object?)row.Height ?? DBNull.Value;
-                    }
-                    written += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                }
-
+                written = await WriteRowsAsync(connection, transaction, sql, rows, now, cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
+        }
+
+        return written;
+    }
+
+    private static async Task<int> WriteRowsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string sql,
+        IEnumerable<(Guid ItemId, string Locale, string Key, string Value, string Source, bool Locked, int? Width, int? Height)> rows,
+        long now,
+        CancellationToken cancellationToken)
+    {
+        var written = 0;
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        var item = command.Parameters.Add("$item", SqliteType.Text);
+        var locale = command.Parameters.Add("$locale", SqliteType.Text);
+        var key = command.Parameters.Add("$key", SqliteType.Text);
+        var value = command.Parameters.Add("$value", SqliteType.Text);
+        var source = command.Parameters.Add("$source", SqliteType.Text);
+        var locked = command.Parameters.Add("$locked", SqliteType.Integer);
+        var hasSize = sql.Contains("$width", StringComparison.Ordinal);
+        var width = hasSize ? command.Parameters.Add("$width", SqliteType.Integer) : null;
+        var height = hasSize ? command.Parameters.Add("$height", SqliteType.Integer) : null;
+        command.Parameters.AddWithValue("$now", now);
+
+        foreach (var row in rows)
+        {
+            item.Value = FormatId(row.ItemId);
+            locale.Value = row.Locale;
+            key.Value = row.Key;
+            value.Value = row.Value;
+            source.Value = row.Source;
+            locked.Value = row.Locked ? 1 : 0;
+            if (width is not null && height is not null)
+            {
+                width.Value = (object?)row.Width ?? DBNull.Value;
+                height.Value = (object?)row.Height ?? DBNull.Value;
+            }
+
+            written += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return written;

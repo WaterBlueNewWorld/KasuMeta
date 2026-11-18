@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Library;
+using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
 
 namespace Jellyfin.Plugin.KasuMeta.Tests.Support;
@@ -54,8 +55,26 @@ internal sealed class FakeLibrary : ILibraryItemSource
     public static LibraryItemInfo Episode(Guid id, string? seriesTmdb, int? season, int? episode) =>
         new(id, ItemKind.Episode, Ids(null), Ids(seriesTmdb), season, episode);
 
+    /// <summary>An item with the given provider ids (e.g. Tmdb and AniList).</summary>
+    public static LibraryItemInfo WithIds(Guid id, ItemKind kind, params (string Provider, string Id)[] ids) =>
+        new(id, kind, ids.ToDictionary(i => i.Provider, i => i.Id), Ids(null));
+
     private static Dictionary<string, string> Ids(string? tmdb) =>
         tmdb is null ? [] : new Dictionary<string, string> { [ProviderNames.Tmdb] = tmdb };
+}
+
+/// <summary>Answers AniList lookups from a script and records the ids asked for.</summary>
+internal sealed class FakeAniList : IAniListClient
+{
+    public List<int> Calls { get; } = [];
+
+    public Func<int, IReadOnlyList<AniListTranslation>?> Answer { get; set; } = _ => [];
+
+    public Task<IReadOnlyList<AniListTranslation>?> GetMediaAsync(int mediaId, CancellationToken cancellationToken)
+    {
+        Calls.Add(mediaId);
+        return Task.FromResult(Answer(mediaId));
+    }
 }
 
 /// <summary>Answers from a script and records the calls.</summary>

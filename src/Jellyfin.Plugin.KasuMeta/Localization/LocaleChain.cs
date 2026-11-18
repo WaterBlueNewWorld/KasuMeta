@@ -12,6 +12,12 @@ public static class LocaleChain
     private static readonly HashSet<string> HantRegions = new(StringComparer.Ordinal) { "TW", "HK", "MO" };
 
     /// <summary>
+    /// Languages whose Latin-script form (<c>-Latn</c>: romaji, pinyin, romanized Korean or
+    /// Cantonese) is kept apart from the native script when falling back.
+    /// </summary>
+    private static readonly HashSet<string> RomanizedGroups = new(StringComparer.Ordinal) { "ja", "zh", "ko", "yue" };
+
+    /// <summary>
     /// Normalizes a locale: <c>es_mx</c> → <c>es-MX</c>, <c>zh-hant-tw</c> → <c>zh-Hant-TW</c>,
     /// <c>JA</c> → <c>ja</c>. Accepts language, optional 4-letter script and optional 2-letter or
     /// 3-digit region; anything else is rejected.
@@ -81,18 +87,26 @@ public static class LocaleChain
     }
 
     /// <summary>
-    /// Gets the group a locale may fall back within: the language, except Chinese, which splits
-    /// by script so Traditional and Simplified never stand in for each other.
+    /// Gets the group a locale may fall back within: the language, except that scripts never
+    /// stand in for each other. Chinese splits into Traditional and Simplified, and a
+    /// romanization of a language not normally written in Latin letters (<c>ja-Latn</c>, romaji)
+    /// is a group of its own: a reader of 魔法少女 doesn't want "Mahou Shoujo", nor the other way
+    /// round.
     /// </summary>
     public static string FallbackGroup(string locale)
     {
         var language = Language(locale);
+        var parts = locale.Split('-');
+        if (RomanizedGroups.Contains(language) && parts.Contains("Latn", StringComparer.Ordinal))
+        {
+            return language + "-Latn";
+        }
+
         if (language != "zh")
         {
             return language;
         }
 
-        var parts = locale.Split('-');
         if (parts.Contains("Hant", StringComparer.Ordinal) || parts.Any(HantRegions.Contains))
         {
             return "zh-Hant";

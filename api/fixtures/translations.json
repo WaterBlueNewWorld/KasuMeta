@@ -1,0 +1,140 @@
+{
+  "ItemId": "1eb732044aec1079626f8d928d40e1bc",
+  "Locales": {
+    "en-US": {
+      "Name": {
+        "Value": "Antitrust",
+        "Source": "tmdb",
+        "ResolvedLocale": "en-US",
+        "Locked": false
+      },
+      "Overview": {
+        "Value": "A computer programmer's dream job at a hot Portland-based firm turns nightmarish when he discovers his boss has a secret and ruthless means of dispatching anti-trust problems.",
+        "Source": "tmdb",
+        "ResolvedLocale": "en-US",
+        "Locked": false
+      },
+      "Tagline": {
+        "Value": "Truth can be dangerous...Trust can be deadly.",
+        "Source": "tmdb",
+        "ResolvedLocale": "en-US",
+        "Locked": false
+      },
+      "Images": {
+        "Backdrop": {
+          "Url": "https://image.tmdb.org/t/p/original/xFBXArm25sot7bPJTSidCCMAKJ2.jpg",
+          "Width": 1920,
+          "Height": 1080,
+          "Source": "tmdb",
+          "ResolvedLocale": "en-US",
+          "Locked": false
+        },
+        "Logo": {
+          "Url": "https://image.tmdb.org/t/p/original/dI5c3GuhwLIMWTKnNGEmK329onK.png",
+          "Width": 4182,
+          "Height": 718,
+          "Source": "tmdb",
+          "ResolvedLocale": "en-US",
+          "Locked": false
+        },
+        "Primary": {
+          "Url": "https://image.tmdb.org/t/p/original/9PXyfcJe53A9qFkcj5dkTJwIWoS.jpg",
+          "Width": 1000,
+          "Height": 1500,
+          "Source": "tmdb",
+          "ResolvedLocale": "en-US",
+          "Locked": false
+        }
+      },
+      "UpdatedAt": "2026-11-17T06:29:01+00:00"
+    },
+    "es-ES": {
+      "Name": {
+        "Value": "Conspiración en la red: Hackers 3",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-ES",
+        "Locked": false
+      },
+      "Overview": {
+        "Value": "Milo (Ryan Phillippe), un joven genio, está dotado para convertirse en uno de los mejores informáticos del mundo. En el garaje de su casa, desarrolla la tecnología que ambicionan las mayores empresas del mundo: un revolucionario software que permite el enlace de todas las formas de comunicación digital, a través de una sola fuente de alimentación. Cuando Milo está a punto de conseguir su sueño, recibe una tentadora oferta: dinero, recursos y un sinfin de posibilidades que Gary Winston (Tim Robbins), el director de N.U.R.V., una millonaria y poderosa empresa de software, le ofrece en bandeja.",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-ES",
+        "Locked": false
+      },
+      "Tagline": {
+        "Value": "La verdad puede ser peligrosa... La confianza puede ser mortal.",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-ES",
+        "Locked": false
+      },
+      "Images": {
+        "Logo": {
+          "Url": "https://image.tmdb.org/t/p/original/swGs2mjzvlUvYW37naumPyvUFR0.png",
+          "Width": 558,
+          "Height": 92,
+          "Source": "tmdb",
+          "ResolvedLocale": "es-ES",
+          "Locked": false
+        },
+        "Primary": {
+          "Url": "https://image.tmdb.org/t/p/original/zqGqZsOfY40ZnyzPPQq1jEVSTNf.jpg",
+          "Width": 1920,
+          "Height": 2560,
+          "Source": "tmdb",
+          "ResolvedLocale": "es-ES",
+          "Locked": false
+        }
+      },
+      "UpdatedAt": "2026-11-17T06:29:01+00:00"
+    },
+    "es-MX": {
+      "Name": {
+        "Value": "Amenaza Virtual",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-MX",
+        "Locked": false
+      },
+      "Overview": {
+        "Value": "Milo Hoffman es un joven informático increíblemente prometedor para su edad que rápidamente es contratado por una importante empresa de Sillicon Valley. El empleo de sus sueños se ha hecho realidad, ya que ahí puede trabajar con los ordenadores más potentes del mundo y con las últimas tecnologías que aún no han salido al mercado. El Paraíso de un informático. Su jefe, Gary Winston , es un poderoso pez gordo de la industria que en un principio parece un tipo íntegro y legal. Pero pronto descubrirá que fisgar en sus archivos secretos no es la mejor idea si uno quiere conservar su trabajo... y su vida.",
+        "Source": "tmdb",
+        "ResolvedLocale": "es-MX",
+        "Locked": false
+      },
+      "Tagline": {
+        "Value": "La verdad tiene un precio.",
+        "Source": "manual",
+        "ResolvedLocale": "es-MX",
+        "Locked": true
+      },
+      "UpdatedAt": "2026-11-17T23:12:17+00:00"
+    },
+    "ja-JP": {
+      "Name": {
+        "Value": "サベイランス",
+        "Source": "tmdb",
+        "ResolvedLocale": "ja-JP",
+        "Locked": false
+      },
+      "UpdatedAt": "2026-11-17T06:29:01+00:00"
+    },
+    "zh-CN": {
+      "Name": {
+        "Value": "反托拉斯行动",
+        "Source": "tmdb",
+        "ResolvedLocale": "zh-CN",
+        "Locked": false
+      },
+      "Overview": {
+        "Value": "米罗（瑞安·菲力浦饰）是个年轻聪明而充满理想的小伙子，他在电脑方面的特长几乎无人能比，是一个名副其实的电脑天才，而且还有个当画家的漂亮女友（克莱尔·弗兰妮饰），本来生活无忧无虑，还有着一片光明的大好前途，但正当他着手和朋友泰迪创办自己的公司想打出自己的一片天下时，却意外地被硅谷一间拥有数亿美金资产的大公司——NURV相中。这间公司的拥有者，正是电脑业的顶尖人物——加里·文斯顿（蒂姆·罗宾斯饰），在米罗眼中，文斯顿无疑是个精明强干无往不利的传奇式人物。文斯顿要利用米罗出类拔萃的电脑天赋使自己的公司在这一领域中立于不败之地，而对于米罗来说，这不仅意味着丰厚的报酬，更是一个为实现自己的理想而大展拳脚的好机会。于是，他放弃了和泰迪筹办的公司，投入了NURV的怀抱。很快，米罗就因为和新搭档丽莎（瑞切尔·蕾·库克饰）的出色合作而得到了文斯顿的赏识，但是，正在米罗的事业稍有点起色时，形势突然出现了变化：一连串的事件使米罗开始怀疑起这个公司的底细，在他的调查之下，真相被逐渐被揭示出来，原来，他的老板文斯顿有着不可告人的秘密，而且处理起那些对公司的垄断地位构成威胁的问题一向是不择手段，这让米罗不寒而栗，更可怕的是，米罗发现，身边没人可以信任，自己简直就是在和这个庞大的垄断组织孤军作战，他这才意识到自己正身处危险中......",
+        "Source": "tmdb",
+        "ResolvedLocale": "zh-CN",
+        "Locked": false
+      },
+      "UpdatedAt": "2026-11-17T06:29:01+00:00"
+    }
+  },
+  "Fetch": {
+    "Status": "ok",
+    "LastFetch": "2026-11-17T06:29:01+00:00"
+  }
+}

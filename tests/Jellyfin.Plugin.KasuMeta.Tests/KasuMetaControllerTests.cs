@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Jellyfin.Plugin.KasuMeta.Api;
 using Jellyfin.Plugin.KasuMeta.Api.Models;
 using Jellyfin.Plugin.KasuMeta.Configuration;
+using Jellyfin.Plugin.KasuMeta.Fetching;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Support;
@@ -21,6 +22,7 @@ public sealed class KasuMetaControllerTests : IDisposable
 
     private readonly TestDatabase _db = new();
     private readonly FakeLibrary _library = new();
+    private readonly FetchQueue _queue = new();
     private readonly FakeConfig _config = new(new PluginConfiguration
     {
         EnabledLocales = ["es-MX", "ja-JP"],
@@ -46,7 +48,225 @@ public sealed class KasuMetaControllerTests : IDisposable
         Assert.Equal(("KasuMeta", "1.2.3.0", KasuMetaController.ApiVersion), (info.Name, info.Version, info.ApiVersion));
         Assert.Equal(["es-MX", "ja-JP"], info.EnabledLocales);
         Assert.False(info.FallbackToBaseLanguage);
-        Assert.Equal(["text", "images", "search"], info.Features);
+        Assert.Equal(["text", "images", "search", "overrides"], info.Features);
+    }
+
+    [Theory]
+    [InlineData(nameof(KasuMetaController.GetAllLocales))]
+    [InlineData(nameof(KasuMetaController.SetOverrides))]
+    [InlineData(nameof(KasuMetaController.Refresh))]
+    public void Admin_routes_require_elevation(string action)
+    {
+        var method = typeof(KasuMetaController).GetMethod(action)!;
+
+        Assert.Equal("RequiresElevation", method.GetCustomAttribute<AuthorizeAttribute>()?.Policy);
+    }
+
+    [Fact]
+    public void Read_routes_need_no_elevation()
+    {
+        foreach (var action in new[] { nameof(KasuMetaController.GetInfo), nameof(KasuMetaController.GetBatch), nameof(KasuMetaController.GetItem), nameof(KasuMetaController.Search) })
+        {
+            Assert.Null(typeof(KasuMetaController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>());
+        }
+    }
+
+    [Fact]
+    public async Task A_locked_override_is_served_and_survives_a_provider_refresh()
+    {
+        await SeedAsync();
+        var admin = Controller(apiKey: true);
+
+        var put = await admin.SetOverrides(Visible, "es_mx", Overrides(name: new ManualFieldValue { Value = "  Curada  " }), None);
+        await _db.Store.ReplaceProviderFieldsAsync(
+            Visible,
+            MetadataSources.Tmdb,
+            [new(Visible, "es-MX", MetadataFields.Name, "De TMDB", MetadataSources.Tmdb)],
+            None);
+        var served = (await Controller(user: UserId).GetItem(Visible, "es-MX", None)).Value!;
+
+        var stored = put.Value!.Locales["es-MX"].Name!;
+        Assert.Equal(("Curada", MetadataSources.Manual, true, "es-MX"), (stored.Value, stored.Source, stored.Locked, stored.ResolvedLocale));
+        Assert.Equal("Curada", served.Name!.Value);
+        Assert.Equal(0, _queue.Pending); // setting a value needs no re-fetch
+    }
+
+    [Fact]
+    public async Task Removing_a_value_queues_a_forced_refetch()
+    {
+        await _db.Store.UpsertFieldsAsync([new(Visible, "es-MX", MetadataFields.Name, "Curada", MetadataSources.Manual, Locked: true)], None);
+
+        var put = await Controller(apiKey: true).SetOverrides(Visible, "es-MX", Overrides(removeName: true), None);
+
+        Assert.Empty(put.Value!.Locales);
+        var (id, force) = await FirstQueuedAsync();
+        Assert.Equal((Visible, true), (id, force));
+    }
+
+    [Fact]
+    public async Task Overrides_for_an_unknown_item_are_404_and_store_nothing()
+    {
+        var unknown = Guid.NewGuid();
+        var admin = Controller(apiKey: true);
+
+        var put = await admin.SetOverrides(unknown, "es-MX", Overrides(name: new ManualFieldValue { Value = "x" }), None);
+        var all = await admin.GetAllLocales(unknown, None);
+        var refresh = admin.Refresh(unknown);
+
+        Assert.IsType<NotFoundResult>(put.Result);
+        Assert.IsType<NotFoundResult>(all.Result);
+        Assert.IsType<NotFoundResult>(refresh);
+        Assert.Empty(await _db.Store.GetFieldsAsync([unknown], null, None));
+        Assert.Equal(0, _queue.Pending);
+    }
+
+    [Theory]
+    [InlineData("not a locale")]
+    [InlineData("")]
+    public async Task An_override_with_a_bad_locale_is_a_bad_request(string locale)
+    {
+        var result = await Controller(apiKey: true).SetOverrides(Visible, locale, Overrides(name: new ManualFieldValue { Value = "x" }), None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task An_invalid_override_is_a_bad_request_and_stores_nothing()
+    {
+        var result = await Controller(apiKey: true).SetOverrides(Visible, "es-MX", Overrides(name: new ManualFieldValue { Value = " " }), None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(await _db.Store.GetFieldsAsync([Visible], null, None));
+    }
+
+    [Fact]
+    public void Refresh_queues_a_forced_fetch()
+    {
+        var result = Controller(apiKey: true).Refresh(Visible);
+
+        Assert.IsType<AcceptedResult>(result);
+        Assert.Equal(1, _queue.Pending);
+    }
+
+    [Fact]
+    public async Task All_lists_every_stored_locale_without_fallback_and_the_fetch_state()
+    {
+        await _db.Store.UpsertFieldsAsync(
+            [
+                new(Visible, "es-ES", MetadataFields.Name, "La película (España)", MetadataSources.Tmdb),
+                new(Visible, "ja-JP", MetadataFields.Overview, "映画", MetadataSources.Tmdb),
+            ],
+            None);
+        await _db.Store.UpsertImagesAsync(
+            [new(Visible, "zh-CN", LocalizedImageTypes.Logo, "https://image.tmdb.org/t/p/original/zh.png", MetadataSources.Tmdb)],
+            None);
+        await _db.Store.SetFetchStateAsync(
+            new FetchState(Visible, new Dictionary<string, string> { ["Tmdb"] = "1" }, _db.Time.Now, FetchStatus.Ok, FetchVersion: 3),
+            None);
+
+        var all = (await Controller(apiKey: true).GetAllLocales(Visible, None)).Value!;
+
+        Assert.Equal(Visible.ToString("N"), all.ItemId);
+        Assert.Equal(["es-ES", "ja-JP", "zh-CN"], all.Locales.Keys);
+        Assert.Null(all.Locales["es-ES"].Overview); // no fallback between locales
+        Assert.Equal("映画", all.Locales["ja-JP"].Overview!.Value);
+        Assert.Equal("zh-CN", all.Locales["zh-CN"].Images!["Logo"].ResolvedLocale);
+        Assert.Equal(new ItemFetchInfo("ok", _db.Time.Now, null), all.Fetch);
+    }
+
+    [Fact]
+    public async Task All_for_a_never_fetched_item_is_empty_without_a_fetch_state()
+    {
+        var all = (await Controller(apiKey: true).GetAllLocales(Visible, None)).Value!;
+
+        Assert.Empty(all.Locales);
+        Assert.Null(all.Fetch);
+    }
+
+    [Theory]
+    [InlineData("rating", "x", "Unknown field")]
+    [InlineData("Name", "", "empty")]
+    [InlineData("Name", "   ", "empty")]
+    public void Bad_field_overrides_are_refused(string key, string value, string message)
+    {
+        var request = new ItemOverridesRequest { Fields = new Dictionary<string, ManualFieldValue?> { [key] = new() { Value = value } } };
+
+        Assert.False(KasuMetaController.TryBuildEdit(Visible, "es-MX", request, out _, out var error));
+        Assert.Contains(message, error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Poster", "https://example.org/a.jpg", "Unknown image type")]
+    [InlineData("Primary", "", "absolute http(s) URL")]
+    [InlineData("Primary", "/relative/a.jpg", "absolute http(s) URL")]
+    [InlineData("Primary", "javascript:alert(1)", "absolute http(s) URL")]
+    [InlineData("Primary", "file:///etc/passwd", "absolute http(s) URL")]
+    public void Bad_image_overrides_are_refused(string key, string url, string message)
+    {
+        var request = new ItemOverridesRequest { Images = new Dictionary<string, ManualImageValue?> { [key] = new() { Url = url } } };
+
+        Assert.False(KasuMetaController.TryBuildEdit(Visible, "es-MX", request, out _, out var error));
+        Assert.Contains(message, error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Too_long_values_are_refused()
+    {
+        var text = new ItemOverridesRequest
+        {
+            Fields = new Dictionary<string, ManualFieldValue?> { ["Overview"] = new() { Value = new string('a', KasuMetaController.MaxTextLength + 1) } },
+        };
+        var url = new ItemOverridesRequest
+        {
+            Images = new Dictionary<string, ManualImageValue?> { ["Primary"] = new() { Url = "https://example.org/" + new string('a', KasuMetaController.MaxUrlLength) } },
+        };
+
+        Assert.False(KasuMetaController.TryBuildEdit(Visible, "es-MX", text, out _, out _));
+        Assert.False(KasuMetaController.TryBuildEdit(Visible, "es-MX", url, out _, out _));
+    }
+
+    [Fact]
+    public void An_empty_override_and_a_key_given_twice_are_refused()
+    {
+        var twice = new ItemOverridesRequest
+        {
+            Fields = new Dictionary<string, ManualFieldValue?> { ["SortName"] = new() { Value = "a" }, ["sort_name"] = null },
+        };
+
+        Assert.False(KasuMetaController.TryBuildEdit(Visible, "es-MX", new ItemOverridesRequest(), out _, out var empty));
+        Assert.False(KasuMetaController.TryBuildEdit(Visible, "es-MX", twice, out _, out var duplicate));
+        Assert.Contains("Nothing to change", empty, StringComparison.Ordinal);
+        Assert.Contains("twice", duplicate, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_override_request_becomes_a_store_edit()
+    {
+        var request = new ItemOverridesRequest
+        {
+            Fields = new Dictionary<string, ManualFieldValue?>
+            {
+                ["name"] = new() { Value = " Curada " },
+                ["TAGLINE"] = new() { Value = "Rápida", Locked = false },
+                ["Overview"] = null,
+            },
+            Images = new Dictionary<string, ManualImageValue?>
+            {
+                ["primary"] = new() { Url = " https://example.org/p.jpg " },
+                ["Logo"] = null,
+            },
+        };
+
+        Assert.True(KasuMetaController.TryBuildEdit(Visible, "es-MX", request, out var edit, out _));
+
+        Assert.Equal(
+            ["name=Curada locked", "tagline=Rápida unlocked"],
+            edit.SetFields.Select(f => $"{f.Field}={f.Value} {(f.Locked ? "locked" : "unlocked")}").Order(StringComparer.Ordinal));
+        Assert.All(edit.SetFields, f => Assert.Equal((Visible, "es-MX", MetadataSources.Manual), (f.ItemId, f.Locale, f.Source)));
+        var image = Assert.Single(edit.SetImages);
+        Assert.Equal(("Primary", "https://example.org/p.jpg", true), (image.ImageType, image.Url, image.Locked));
+        Assert.Equal([MetadataFields.Overview], edit.RemoveFields);
+        Assert.Equal([LocalizedImageTypes.Logo], edit.RemoveImages);
     }
 
     [Fact]
@@ -275,6 +495,20 @@ public sealed class KasuMetaControllerTests : IDisposable
 
     private static BatchRequest Request(params Guid[] ids) => new() { ItemIds = ids, Locale = "es-MX" };
 
+    private static ItemOverridesRequest Overrides(ManualFieldValue? name = null, bool removeName = false) =>
+        new() { Fields = new Dictionary<string, ManualFieldValue?> { ["Name"] = removeName ? null : name } };
+
+    private async Task<(Guid ItemId, bool Force)> FirstQueuedAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await foreach (var entry in _queue.ReadAllAsync(timeout.Token))
+        {
+            return entry;
+        }
+
+        throw new InvalidOperationException("Nothing was queued.");
+    }
+
     private Task<int> SeedAsync() =>
         _db.Store.UpsertFieldsAsync(
             [
@@ -296,7 +530,13 @@ public sealed class KasuMetaControllerTests : IDisposable
             claims.Add(new Claim(KasuMetaController.IsApiKeyClaim, "True"));
         }
 
-        return new KasuMetaController(_config, new OverlayService(_db.Store, _config), new SearchService(_db.Store, _library), _library)
+        return new KasuMetaController(
+            _config,
+            new OverlayService(_db.Store, _config),
+            new SearchService(_db.Store, _library),
+            _library,
+            _db.Store,
+            _queue)
         {
             ControllerContext = new ControllerContext
             {

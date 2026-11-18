@@ -25,6 +25,14 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Gets or sets the TVDB API key. Never sent to clients.</summary>
     public string TvdbApiKey { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether items with an AniList id also get AniList's titles
+    /// (English, native, and romaji as <c>ja-Latn</c>, which is stored for search even when it
+    /// isn't an enabled locale). AniList needs no key. TMDB's values win
+    /// where both have one.
+    /// </summary>
+    public bool AniListEnabled { get; set; } = true;
+
     /// <summary>Gets or sets how old a fetched row may get before the refresh task re-fetches it.</summary>
     public int RefreshIntervalHours { get; set; } = 24 * 7;
 }

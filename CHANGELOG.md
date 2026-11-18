@@ -5,6 +5,30 @@ All notable changes to KasuMeta. Format: [Keep a Changelog](https://keepachangel
 ## [Unreleased]
 
 ### Added
+- Phase 4, manual overrides (admins only, Jellyfin's `RequiresElevation` policy):
+  - `PUT /KasuMeta/Items/{itemId}/{locale}`: sets manual names, overviews, taglines, sort
+    names and images for one locale, in one transaction. A manual value always replaces what is
+    stored, and is locked by default, so provider refreshes leave it alone; `Locked: false` sets
+    a quick correction the next fetch may replace. `null` removes the stored value and queues a
+    re-fetch, so the provider's value comes back.
+  - `GET /KasuMeta/Items/{itemId}/All`: every stored locale of an item without fallback, with
+    each value's source and lock, and the item's fetch state (status, last fetch, last error).
+  - `POST /KasuMeta/Items/{itemId}/Refresh`: queues a forced re-fetch (202).
+  - Manual names are searchable at once, and a removed one leaves the index.
+  - `overrides` in `Info.Features`.
+- Phase 4, anime titles from AniList:
+  - Movies and series with an `AniList` provider id are also fetched from AniList's GraphQL API
+    (no key; on by default, "Anime titles from AniList" on the plugin page). One request per
+    item, at most 30 a minute, with a User-Agent, which AniList's Cloudflare front requires.
+  - Romaji is stored as `ja-Latn` (`zh-Latn`/`ko-Latn` for Chinese and Korean titles) whether
+    or not that locale is enabled, so anyone can find an anime by its romaji name in search. It
+    is served only to a request for that locale: no other locale falls back to it. English and
+    native titles and the English synopsis fill what TMDB lacks, for the enabled locales.
+    Order per field and locale: manual, then TMDB, then AniList.
+  - Fetch version 4: the backfill re-fetches every item once after the update.
+  - `scripts/dev-anilist-setup.sh` gives the dev server's anime series their AniList ids;
+    `scripts/e2e-test.sh` checks AniList, including romaji search from an `en-US` session,
+    when that has been run.
 - Phase 3, search over localized names:
   - `GET /KasuMeta/Search?q=&locale=&limit=&types=`: names in every stored locale, so a title is
     found by its name in any enabled language; one result per item, reported under the caller's
@@ -35,6 +59,9 @@ All notable changes to KasuMeta. Format: [Keep a Changelog](https://keepachangel
   properties.
 
 ### Changed
+- Romanized locales (`ja-Latn`, `zh-Latn`, `ko-Latn`, `yue-Latn`) are their own fallback group:
+  a `ja-JP` request is never answered with romaji, nor a `ja-Latn` one with kanji, just as
+  Traditional and Simplified Chinese were already kept apart.
 - Batch `Fields`: an empty list now means "no fields" (images only), matching `Images`; absent
   still means all.
 

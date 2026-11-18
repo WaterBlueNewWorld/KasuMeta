@@ -86,6 +86,13 @@ public interface ILocalizedMetadataStore
         int maxCandidates,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Applies an admin's edit in one transaction: removes the listed keys, then writes the
+    /// manual rows over whatever is stored (locked or not).
+    /// </summary>
+    /// <returns>How many rows were written or removed.</returns>
+    Task<int> ApplyManualEditAsync(ManualEdit edit, CancellationToken cancellationToken);
+
     /// <summary>Removes everything stored for an item (it left the library).</summary>
     Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken);
 }

@@ -2,6 +2,7 @@ using Jellyfin.Plugin.KasuMeta.Api;
 using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Fetching;
 using Jellyfin.Plugin.KasuMeta.Library;
+using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using MediaBrowser.Controller;
@@ -38,6 +39,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         // Providers. HttpClient comes from Jellyfin's own IHttpClientFactory (NamedClient.Default).
         serviceCollection.AddSingleton<ITmdbClient, TmdbClient>();
+        serviceCollection.AddSingleton<IAniListClient, AniListClient>();
 
         // Library, fetching, API. The scheduled tasks (Tasks/) need no registration: Jellyfin
         // finds IScheduledTask types in plugin assemblies and builds them from this container.

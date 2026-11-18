@@ -68,6 +68,46 @@ public sealed class OverlayService
         return new BatchResponse { Locale = locale, Items = items, Missing = missing };
     }
 
+    /// <summary>
+    /// Builds the admin view of one item: every stored locale as it is, with no fallback, plus
+    /// the item's fetch state.
+    /// </summary>
+    public async Task<ItemTranslations> BuildAllLocalesAsync(Guid itemId, CancellationToken cancellationToken)
+    {
+        var config = _config.Current;
+        var rows = await _store.GetFieldsAsync([itemId], null, cancellationToken).ConfigureAwait(false);
+        var images = await _store.GetImagesAsync([itemId], null, cancellationToken).ConfigureAwait(false);
+        var state = await _store.GetFetchStateAsync(itemId, cancellationToken).ConfigureAwait(false);
+
+        var fieldsByLocale = rows.ToLookup(r => r.Locale, StringComparer.Ordinal);
+        var imagesByLocale = images.ToLookup(i => i.Locale, StringComparer.Ordinal);
+        var locales = new SortedDictionary<string, ItemOverlay>(StringComparer.Ordinal);
+        foreach (var locale in fieldsByLocale.Select(g => g.Key).Union(imagesByLocale.Select(g => g.Key), StringComparer.Ordinal))
+        {
+            // Exact match only: each locale shows what is stored under it.
+            if (Resolve(fieldsByLocale[locale], imagesByLocale[locale], locale, false, config.EnabledLocales) is { } overlay)
+            {
+                locales[locale] = overlay;
+            }
+        }
+
+        return new ItemTranslations
+        {
+            ItemId = itemId.ToString("N", CultureInfo.InvariantCulture),
+            Locales = locales,
+            Fetch = state is null ? null : new ItemFetchInfo(FormatStatus(state.Status), state.LastFetch, state.LastError),
+        };
+    }
+
+    private static string FormatStatus(FetchStatus status) => status switch
+    {
+        FetchStatus.Pending => "pending",
+        FetchStatus.Ok => "ok",
+        FetchStatus.Error => "error",
+        FetchStatus.Skipped => "skipped",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+    };
+
     /// <summary>Resolves one item's rows into an overlay, or null if nothing resolves.</summary>
     internal static ItemOverlay? Resolve(
         IEnumerable<LocalizedField> rows,

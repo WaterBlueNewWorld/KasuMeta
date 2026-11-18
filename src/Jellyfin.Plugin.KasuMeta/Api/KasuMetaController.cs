@@ -2,6 +2,7 @@ using System.Net.Mime;
 using System.Security.Claims;
 using Jellyfin.Plugin.KasuMeta.Api.Models;
 using Jellyfin.Plugin.KasuMeta.Configuration;
+using Jellyfin.Plugin.KasuMeta.Fetching;
 using Jellyfin.Plugin.KasuMeta.Library;
 using Jellyfin.Plugin.KasuMeta.Localization;
 using Jellyfin.Plugin.KasuMeta.Search;
@@ -34,12 +35,24 @@ public class KasuMetaController : ControllerBase
     /// <summary>Most search results per request.</summary>
     public const int MaxSearchLimit = 100;
 
+    /// <summary>Longest manual text value, in UTF-16 units.</summary>
+    public const int MaxTextLength = 10_000;
+
+    /// <summary>Longest manual image URL.</summary>
+    public const int MaxUrlLength = 2_048;
+
+    /// <summary>
+    /// Jellyfin's administrators-only policy (Jellyfin.Api.Constants.Policies.RequiresElevation,
+    /// not on NuGet, hence the literal). An admin user or an API key passes it.
+    /// </summary>
+    internal const string ElevationPolicy = "RequiresElevation";
+
     /// <summary>
     /// What this build can do beyond the Info route, for clients to switch on. The API grows by
     /// adding routes and optional properties (ApiVersion stays), so "is search there?" is asked
     /// here rather than guessed from a version number.
     /// </summary>
-    internal static readonly string[] Features = ["text", "images", "search"];
+    internal static readonly string[] Features = ["text", "images", "search", "overrides"];
 
     private static readonly IReadOnlySet<ItemKind> DefaultSearchKinds =
         new HashSet<ItemKind> { ItemKind.Movie, ItemKind.Series, ItemKind.Episode };
@@ -53,17 +66,23 @@ public class KasuMetaController : ControllerBase
     private readonly OverlayService _overlays;
     private readonly SearchService _search;
     private readonly ILibraryItemSource _library;
+    private readonly ILocalizedMetadataStore _store;
+    private readonly IFetchQueue _queue;
 
     public KasuMetaController(
         IKasuMetaConfigProvider config,
         OverlayService overlays,
         SearchService search,
-        ILibraryItemSource library)
+        ILibraryItemSource library,
+        ILocalizedMetadataStore store,
+        IFetchQueue queue)
     {
         _config = config;
         _overlays = overlays;
         _search = search;
         _library = library;
+        _store = store;
+        _queue = queue;
     }
 
     /// <summary>
@@ -154,6 +173,198 @@ public class KasuMetaController : ControllerBase
             .BuildAsync([itemId], visible, normalized, MetadataFields.All, LocalizedImageTypes.All, cancellationToken)
             .ConfigureAwait(false);
         return batch.Items.Values.FirstOrDefault() is { } overlay ? overlay : NotFound();
+    }
+
+    /// <summary>
+    /// Admin view of one item: every stored locale as stored (no fallback), with each value's
+    /// source and lock, and the item's fetch state. What the translations editor loads.
+    /// </summary>
+    /// <response code="200">The stored values; Locales is empty when nothing is stored.</response>
+    /// <response code="403">Not an administrator.</response>
+    /// <response code="404">No such item in the library.</response>
+    [HttpGet("Items/{itemId}/All")]
+    [Authorize(Policy = ElevationPolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ItemTranslations>> GetAllLocales([FromRoute] Guid itemId, CancellationToken cancellationToken)
+    {
+        if (_library.GetItem(itemId) is null)
+        {
+            return NotFound();
+        }
+
+        return await _overlays.BuildAllLocalesAsync(itemId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Sets or removes manual values of one item in one locale, in one transaction. A value
+    /// always replaces what is stored, locked or not. A null removes the stored value and queues
+    /// a re-fetch, so the provider's value comes back if it has one.
+    /// </summary>
+    /// <response code="200">Applied; the body is the item's admin view after the change.</response>
+    /// <response code="400">Bad locale, unknown or repeated key, empty text, bad URL, or nothing to change.</response>
+    /// <response code="403">Not an administrator.</response>
+    /// <response code="404">No such item in the library.</response>
+    [HttpPut("Items/{itemId}/{locale}")]
+    [Authorize(Policy = ElevationPolicy)]
+    [Consumes(MediaTypeNames.Application.Json)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ItemTranslations>> SetOverrides(
+        [FromRoute] Guid itemId,
+        [FromRoute] string locale,
+        [FromBody] ItemOverridesRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!LocaleChain.TryNormalize(locale, out var normalized))
+        {
+            return BadRequest("Locale must be a BCP-47 code such as es-MX.");
+        }
+
+        if (!TryBuildEdit(itemId, normalized, request, out var edit, out var error))
+        {
+            return BadRequest(error);
+        }
+
+        if (_library.GetItem(itemId) is null)
+        {
+            return NotFound();
+        }
+
+        await _store.ApplyManualEditAsync(edit, cancellationToken).ConfigureAwait(false);
+        if (edit.RemoveFields.Count > 0 || edit.RemoveImages.Count > 0)
+        {
+            _queue.Enqueue(itemId, force: true);
+        }
+
+        return await _overlays.BuildAllLocalesAsync(itemId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Queues a forced re-fetch of one item from its providers. Locked values stay. Poll
+    /// <c>Items/{itemId}/All</c> for a newer <c>Fetch.LastFetch</c> to see it done.
+    /// </summary>
+    /// <response code="202">Queued.</response>
+    /// <response code="403">Not an administrator.</response>
+    /// <response code="404">No such item in the library.</response>
+    [HttpPost("Items/{itemId}/Refresh")]
+    [Authorize(Policy = ElevationPolicy)]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult Refresh([FromRoute] Guid itemId)
+    {
+        if (_library.GetItem(itemId) is null)
+        {
+            return NotFound();
+        }
+
+        _queue.Enqueue(itemId, force: true);
+        return Accepted();
+    }
+
+    /// <summary>
+    /// Validates an override request and turns it into a store edit. Values are trimmed; text
+    /// must be non-empty and at most <see cref="MaxTextLength"/> long, image URLs absolute http(s)
+    /// and at most <see cref="MaxUrlLength"/> long.
+    /// </summary>
+    internal static bool TryBuildEdit(
+        Guid itemId,
+        string locale,
+        ItemOverridesRequest request,
+        out ManualEdit edit,
+        out string? error)
+    {
+        var setFields = new List<LocalizedField>();
+        var setImages = new List<LocalizedImage>();
+        var removeFields = new List<string>();
+        var removeImages = new List<string>();
+        edit = new ManualEdit(itemId, locale, setFields, setImages, removeFields, removeImages);
+        error = null;
+
+        if ((request.Fields?.Count ?? 0) + (request.Images?.Count ?? 0) == 0)
+        {
+            error = "Nothing to change: give at least one field or image.";
+            return false;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (raw, value) in request.Fields ?? new Dictionary<string, ManualFieldValue?>())
+        {
+            if (!TryParseFields([raw], out var parsed, out _))
+            {
+                error = $"Unknown field '{raw}'. Known: {string.Join(", ", MetadataFields.All.Order(StringComparer.Ordinal))}.";
+                return false;
+            }
+
+            var field = parsed.Single();
+            if (!seen.Add(field))
+            {
+                error = $"Field '{raw}' is given twice.";
+                return false;
+            }
+
+            if (value is null)
+            {
+                removeFields.Add(field);
+                continue;
+            }
+
+            var text = value.Value?.Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                error = $"Field '{raw}' is empty; send null to remove it.";
+                return false;
+            }
+
+            if (text.Length > MaxTextLength)
+            {
+                error = $"Field '{raw}' is longer than {MaxTextLength} characters.";
+                return false;
+            }
+
+            setFields.Add(new LocalizedField(itemId, locale, field, text, MetadataSources.Manual, value.Locked));
+        }
+
+        foreach (var (raw, value) in request.Images ?? new Dictionary<string, ManualImageValue?>())
+        {
+            if (!TryParseImageTypes([raw], out var parsed, out _))
+            {
+                error = $"Unknown image type '{raw}'. Known: {string.Join(", ", LocalizedImageTypes.All.Order(StringComparer.Ordinal))}.";
+                return false;
+            }
+
+            var type = parsed.Single();
+            if (!seen.Add(type))
+            {
+                error = $"Image type '{raw}' is given twice.";
+                return false;
+            }
+
+            if (value is null)
+            {
+                removeImages.Add(type);
+                continue;
+            }
+
+            var url = value.Url?.Trim();
+            if (string.IsNullOrEmpty(url)
+                || url.Length > MaxUrlLength
+                || !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+            {
+                error = $"Image '{raw}' needs an absolute http(s) URL of at most {MaxUrlLength} characters; send null to remove it.";
+                return false;
+            }
+
+            setImages.Add(new LocalizedImage(itemId, locale, type, url, MetadataSources.Manual, value.Locked));
+        }
+
+        return true;
     }
 
     /// <summary>

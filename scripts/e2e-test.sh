@@ -105,6 +105,70 @@ body="$(search "the" en-US "limit=1")"
 [[ "$(status -H "$U" "$base/KasuMeta/Search?q=%21%21&locale=es-MX")" == 400 ]] && pass "nothing searchable -> 400" || fail "400 search"
 [[ "$(status "$base/KasuMeta/Search?q=cabin&locale=es-MX")" == 401 ]] && pass "search without a token -> 401" || fail "401 search"
 
+echo "AniList"
+magia_ids="$(curl -sS -H "$A" "$base/Items?Recursive=true&IncludeItemTypes=Series&Fields=ProviderIds" | json "[i['ProviderIds'] for i in d['Items'] if i['Id']=='$magia'][0]")"
+if [[ "$magia_ids" != *AniList* ]]; then
+  printf '  skip AniList checks: run scripts/dev-anilist-setup.sh once to set the AniList ids\n'
+else
+  body="$(curl -sS -H "$A" "$base/KasuMeta/Items/$magia/All")"
+  [[ "$(json "(d['Fetch']['Status'], d['Locales']['ja-Latn']['Name']['Source'], d['Locales']['en-US']['Name']['Source'])" <<<"$body")" == "('ok', 'anilist', 'tmdb')" ]] \
+    && pass "romaji from AniList; TMDB's English title kept (TMDB first)" || fail "anilist sources: $body"
+  romaji_on="$(curl -sS -H "$U" "$base/KasuMeta/Info" | json "'ja-Latn' in d['EnabledLocales']")"
+  body="$(search "mahou shoujo" en_US)"
+  [[ "$(json "(d['Results'][0]['ItemId'], d['Results'][0]['MatchedLocale'])" <<<"$body")" == "('$magia', 'ja-Latn')" ]] \
+    && pass "an en-US user finds it by its romaji title (ja-Latn enabled: $romaji_on)" || fail "romaji search: $body"
+  [[ "$(batch "{\"ItemIds\":[\"$magia\"],\"Locale\":\"en-US\",\"Fields\":[\"Name\"]}" | json "d['Items']['$magia']['Name']['ResolvedLocale']")" == "en-US" ]] \
+    && pass "and is still shown the English title" || fail "en-US title"
+  body="$(batch "{\"ItemIds\":[\"$magia\",\"$antitrust\"],\"Locale\":\"ja-Latn\",\"Fields\":[\"Name\"]}")"
+  [[ "$(json "d['Items']['$magia']['Name']['Value']" <<<"$body")" == "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden" ]] \
+    && pass "ja-Latn serves the romaji title" || fail "romaji: $body"
+  [[ "$(json "d['Missing'] == ['$antitrust']" <<<"$body")" == "True" ]] \
+    && pass "a title without romaji is Missing, not served in kanji" || fail "ja-Latn fell back: $body"
+  [[ "$(curl -sS -H "$U" "$base/KasuMeta/Items/$magia?locale=ja-JP" | json "d['Name']['ResolvedLocale']")" == "ja-JP" ]] \
+    && pass "ja-JP still gets the Japanese-script title" || fail "ja-JP"
+fi
+
+echo "Overrides"
+all() { curl -sS -H "$A" "$base/KasuMeta/Items/$cabin/All"; }
+put_es_mx() { curl -sS -X PUT -H "$A" -H 'Content-Type: application/json' --data "$1" "$base/KasuMeta/Items/$cabin/es-MX"; }
+# wait_all EXPR: polls the admin view until the Python expression over it is True (20 s at most).
+wait_all() {
+  local i
+  for i in $(seq 1 40); do
+    [[ "$(all | json "$1")" == "True" ]] && return 0
+    sleep 0.5
+  done
+  return 1
+}
+[[ "$(curl -sS -H "$U" "$base/KasuMeta/Info" | json "'overrides' in d['Features']")" == "True" ]] && pass "Info lists the overrides feature" || fail "features"
+[[ "$(status -H "$U" "$base/KasuMeta/Items/$cabin/All")" == 403 ]] \
+  && [[ "$(status -X POST -H "$U" "$base/KasuMeta/Items/$cabin/Refresh")" == 403 ]] \
+  && [[ "$(status -X PUT -H "$U" -H 'Content-Type: application/json' --data '{"Fields":{"Name":{"Value":"x"}}}' "$base/KasuMeta/Items/$cabin/es-MX")" == 403 ]] \
+  && pass "admin routes -> 403 for a non-admin (RequiresElevation exists on this server)" || fail "403 admin routes"
+body="$(all)"
+[[ "$(json "{'es-ES', 'es-MX', 'ja-JP'} <= set(d['Locales']) and d['Locales']['es-ES']['Name']['ResolvedLocale'] == 'es-ES' and d['Fetch']['Status'] == 'ok'" <<<"$body")" == "True" ]] \
+  && pass "admin view lists every stored locale, unresolved, with the fetch state" || fail "all: $body"
+trap 'put_es_mx "{\"Fields\":{\"Name\":null}}" >/dev/null' EXIT
+body="$(put_es_mx '{"Fields":{"Name":{"Value":"Refugio maldito"}}}')"
+[[ "$(json "d['Locales']['es-MX']['Name'] == {'Value': 'Refugio maldito', 'Source': 'manual', 'ResolvedLocale': 'es-MX', 'Locked': True}" <<<"$body")" == "True" ]] \
+  && pass "PUT sets a locked manual title" || fail "put: $body"
+[[ "$(batch "{\"ItemIds\":[\"$cabin\"],\"Locale\":\"es-MX\"}" | json "d['Items']['$cabin']['Name']['Value']")" == "Refugio maldito" ]] \
+  && pass "the read path serves it to a normal user" || fail "manual title not served"
+[[ "$(search "refugio" es-MX | json "d['Results'][0]['ItemId']")" == "$cabin" ]] && pass "and search finds it at once" || fail "manual title not searchable"
+before="$(all | json "d['Fetch']['LastFetch']")"
+[[ "$(status -X POST -H "$A" "$base/KasuMeta/Items/$cabin/Refresh")" == 202 ]] && pass "Refresh -> 202" || fail "refresh"
+wait_all "d['Fetch']['LastFetch'] != '$before'" && pass "the refresh ran" || fail "refresh never ran"
+[[ "$(all | json "d['Locales']['es-MX']['Name']['Value']")" == "Refugio maldito" ]] && pass "and left the locked title alone" || fail "lock lost"
+put_es_mx '{"Fields":{"Name":null}}' >/dev/null
+trap - EXIT
+wait_all "d['Locales']['es-MX'].get('Name', {}).get('Value') == 'La cabaña del terror'" \
+  && pass "null removes it, and the re-fetch brings TMDB's title back" || fail "revert"
+[[ "$(search "refugio" es-MX | json "len(d['Results'])")" == 0 ]] && pass "the removed title is no longer found" || fail "stale search entry"
+[[ "$(status -X PUT -H "$A" -H 'Content-Type: application/json' --data '{"Images":{"Primary":{"Url":"file:///etc/passwd"}}}' "$base/KasuMeta/Items/$cabin/es-MX")" == 400 ]] \
+  && pass "a non-http image URL -> 400" || fail "400 url"
+[[ "$(status -X PUT -H "$A" -H 'Content-Type: application/json' --data '{"Fields":{"Name":{"Value":"x"}}}' "$base/KasuMeta/Items/00000000000000000000000000000001/es-MX")" == 404 ]] \
+  && pass "an unknown item -> 404" || fail "404 unknown item"
+
 echo "Errors"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=pt-BR")" == 404 ]] && pass "no translation -> 404" || fail "404"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=bad!")" == 400 ]] && pass "bad locale -> 400" || fail "400 locale"

@@ -48,10 +48,24 @@ public class LocaleChainTests
     [InlineData("zh-HK", "zh-Hant")]
     [InlineData("zh-Hant", "zh-Hant")]
     [InlineData("es-MX", "es")]
-    [InlineData("ja-Latn", "ja")]
-    public void Fallback_groups_split_chinese_by_script(string locale, string group)
+    [InlineData("ja-JP", "ja")]
+    [InlineData("ja-Latn", "ja-Latn")]
+    [InlineData("ja-Latn-JP", "ja-Latn")]
+    [InlineData("zh-Latn", "zh-Latn")]
+    [InlineData("ko-Latn", "ko-Latn")]
+    [InlineData("en-Latn", "en")] // English is written in Latin letters anyway
+    public void Fallback_groups_split_by_script(string locale, string group)
     {
         Assert.Equal(group, LocaleChain.FallbackGroup(locale));
+    }
+
+    [Fact]
+    public void Romaji_and_japanese_script_never_stand_in_for_each_other()
+    {
+        Assert.Null(LocaleChain.Resolve("ja-JP", ["ja-Latn"], fallbackToBase: true));
+        Assert.Null(LocaleChain.Resolve("ja-Latn", ["ja-JP", "ja"], fallbackToBase: true));
+        Assert.Equal("ja-Latn", LocaleChain.Resolve("ja-Latn-JP", ["ja-JP", "ja-Latn"], fallbackToBase: true));
+        Assert.Equal("ja-JP", LocaleChain.Resolve("ja", ["ja-Latn", "ja-JP"], fallbackToBase: true));
     }
 
     [Fact]

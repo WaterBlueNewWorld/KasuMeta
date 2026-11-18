@@ -23,6 +23,7 @@ public class ContractTests
     [InlineData("batch.json", typeof(BatchResponse))]
     [InlineData("item.json", typeof(ItemOverlay))]
     [InlineData("search.json", typeof(SearchResponse))]
+    [InlineData("translations.json", typeof(ItemTranslations))]
     public void Fixtures_round_trip_through_the_DTOs_unchanged(string fixture, Type type)
     {
         var json = Read(fixture);
@@ -79,6 +80,11 @@ public class ContractTests
     [InlineData("LocalizedImageValue", typeof(LocalizedImageValue))]
     [InlineData("SearchResponse", typeof(SearchResponse))]
     [InlineData("SearchResult", typeof(SearchResult))]
+    [InlineData("ItemTranslations", typeof(ItemTranslations))]
+    [InlineData("ItemFetchInfo", typeof(ItemFetchInfo))]
+    [InlineData("ItemOverridesRequest", typeof(ItemOverridesRequest))]
+    [InlineData("ManualFieldValue", typeof(ManualFieldValue))]
+    [InlineData("ManualImageValue", typeof(ManualImageValue))]
     public void The_openapi_schema_lists_exactly_the_DTO_properties(string schema, Type type)
     {
         var properties = Spec()["components"]["schemas"][schema]["properties"];
@@ -98,8 +104,42 @@ public class ContractTests
             .Select(kv => ((YamlScalarNode)kv.Value).Value!)
             .ToList();
 
-        Assert.Equal(4, refs.Count);
+        Assert.Equal(5, refs.Count);
         Assert.All(refs, r => Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "Contract", Path.GetFileName(r))), r));
+    }
+
+    [Fact]
+    public void An_override_body_binds_nulls_as_removals_and_locks_by_default()
+    {
+        const string body = """
+            {
+              "Fields": { "Name": { "Value": "Curada" }, "Tagline": { "Value": "Rápida", "Locked": false }, "Overview": null },
+              "Images": { "Logo": null }
+            }
+            """;
+
+        var request = JsonSerializer.Deserialize<ItemOverridesRequest>(body, JsonDefaults.Options)!;
+
+        Assert.True(request.Fields!["Name"]!.Locked);
+        Assert.False(request.Fields["Tagline"]!.Locked);
+        Assert.True(request.Fields.ContainsKey("Overview"));
+        Assert.Null(request.Fields["Overview"]);
+        Assert.Null(request.Images!["Logo"]);
+    }
+
+    [Fact]
+    public void Locale_keys_are_serialized_as_is()
+    {
+        var produced = JsonSerializer.Serialize(
+            new ItemTranslations
+            {
+                ItemId = "1eb732044aec1079626f8d928d40e1bc",
+                Locales = new Dictionary<string, ItemOverlay> { ["es-MX"] = new() { Name = new LocalizedValue("x", MetadataSources.Manual, "es-MX", true) } },
+            },
+            JsonDefaults.Options);
+
+        Assert.Contains("\"es-MX\":", produced, StringComparison.Ordinal);
+        Assert.DoesNotContain("Fetch", produced, StringComparison.Ordinal); // never fetched: omitted
     }
 
     [Fact]

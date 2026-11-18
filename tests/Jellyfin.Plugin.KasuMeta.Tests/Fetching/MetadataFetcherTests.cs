@@ -2,7 +2,9 @@ using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Fetching;
 using Jellyfin.Plugin.KasuMeta.Library;
 using Jellyfin.Plugin.KasuMeta.Providers;
+using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
+using Jellyfin.Plugin.KasuMeta.Search;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Storage;
 using Jellyfin.Plugin.KasuMeta.Tests.Support;
@@ -36,14 +38,33 @@ public sealed class MetadataFetcherTests : IDisposable
 
     private readonly TestDatabase _db = new();
     private readonly FakeLibrary _library = new();
+    // Magia Record as AniList (104051) and TMDB (94523) describe it, trimmed.
+    private static readonly Guid Magia = Guid.Parse("22222222222222222222222222222222");
+
+    private static readonly IReadOnlyList<AniListTranslation> MagiaAniList =
+    [
+        new("en-US", "Magia Record: Puella Magi Madoka Magica Side Story", "In exchange for the fulfillment of a wish…"),
+        new("ja-JP", "マギアレコード 魔法少女まどか☆マギカ外伝", null),
+        new("ja-Latn", "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden", null),
+    ];
+
+    private static readonly TmdbTitle MagiaTmdb = new(
+        [
+            new("en-US", "Magia Record: Puella Magi Madoka Magica Side Story", null, null), // no English overview
+            new("ja-JP", "マギアレコード 魔法少女まどか☆マギカ外伝", "それは、少女たちも知らない、願いの物語。", null),
+        ],
+        []);
+
     private readonly FakeTmdb _tmdb = new();
+    private readonly FakeAniList _aniList = new();
     private readonly FakeConfig _config = new(new PluginConfiguration { EnabledLocales = ["en-US", "es-MX", "ja-JP"] });
     private readonly MetadataFetcher _fetcher;
 
     public MetadataFetcherTests()
     {
-        _fetcher = new MetadataFetcher(_library, _db.Store, _tmdb, _config, _db.Time);
+        _fetcher = new MetadataFetcher(_library, _db.Store, _tmdb, _aniList, _config, _db.Time);
         _tmdb.Answer = _ => Antitrust_;
+        _aniList.Answer = _ => MagiaAniList;
     }
 
     public void Dispose() => _db.Dispose();
@@ -207,4 +228,196 @@ public sealed class MetadataFetcherTests : IDisposable
         Assert.Equal(FetchResult.Skipped, await _fetcher.FetchAsync(episode, force: false, None));
         Assert.Empty(_tmdb.Calls);
     }
+
+    // ---- AniList ----
+
+    [Fact]
+    public async Task AniList_fills_only_what_tmdb_left_empty()
+    {
+        _config.Current.EnabledLocales = ["en-US", "ja-JP", "ja-Latn"];
+        AddMagia();
+        _tmdb.Answer = _ => MagiaTmdb;
+
+        Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Magia, force: false, None));
+
+        Assert.Equal([104051], _aniList.Calls);
+        var rows = await _db.Store.GetFieldsAsync([Magia], null, None);
+        Assert.Equal(
+            [
+                "en-US name tmdb",
+                "en-US overview anilist", // TMDB has no English overview
+                "ja-JP name tmdb",
+                "ja-JP overview tmdb",
+                "ja-Latn name anilist", // romaji: TMDB never has it
+            ],
+            rows.Select(r => $"{r.Locale} {r.Field} {r.Source}").Order(StringComparer.Ordinal));
+        Assert.Equal(FetchStatus.Ok, (await _db.Store.GetFetchStateAsync(Magia, None))!.Status);
+    }
+
+    [Fact]
+    public async Task Romaji_is_stored_for_search_even_when_ja_Latn_is_not_enabled()
+    {
+        _config.Current.EnabledLocales = ["en-US"];
+        AddMagia();
+        _tmdb.Answer = _ => MagiaTmdb;
+
+        await _fetcher.FetchAsync(Magia, force: false, None);
+
+        var rows = await _db.Store.GetFieldsAsync([Magia], null, None);
+        Assert.Equal(("Magia Record: Mahou Shoujo Madoka☆Magica Gaiden", MetadataSources.AniList), Value(rows, "ja-Latn", MetadataFields.Name));
+        Assert.DoesNotContain(rows, r => r.Locale == "ja-JP"); // the native title still follows the enabled locales
+        var hits = await _db.Store.SearchNamesAsync(SearchQuery.Parse("mahou shoujo"), Enum.GetValues<ItemKind>().ToHashSet(), 50, None);
+        Assert.Contains(hits, h => h.ItemId == Magia && h.Locale == "ja-Latn");
+    }
+
+    [Fact]
+    public void Romanized_titles_of_any_language_are_kept_but_other_locales_still_follow_the_enabled_ones()
+    {
+        var rows = MetadataFetcher.ToAniListFields(
+            Magia,
+            [
+                new("ko-KR", "검은 사제들", null),
+                new("ko-Latn", "Geomeun Sajedeul", null),
+                new("zh-Latn", "Tian Guan Ci Fu", null),
+                new("en-US", "The Priests", "Synopsis."),
+            ],
+            ["es-MX"]);
+
+        Assert.Equal(["ko-Latn", "zh-Latn"], rows.Select(r => r.Locale).Order(StringComparer.Ordinal));
+        Assert.All(rows, r => Assert.Equal(MetadataFields.Name, r.Field));
+    }
+
+    [Fact]
+    public async Task AniList_never_replaces_a_manual_value_and_gives_way_when_tmdb_gains_one()
+    {
+        _config.Current.EnabledLocales = ["en-US", "ja-JP", "ja-Latn"];
+        AddMagia();
+        _tmdb.Answer = _ => MagiaTmdb;
+        await _db.Store.UpsertFieldsAsync([new(Magia, "ja-Latn", MetadataFields.Name, "Magireco", MetadataSources.Manual)], None);
+        await _fetcher.FetchAsync(Magia, force: false, None);
+
+        // TMDB adds an English overview later.
+        _tmdb.Answer = _ => new TmdbTitle([.. MagiaTmdb.Translations, new("en-US", null, "From TMDB.", null)], []);
+        await _fetcher.FetchAsync(Magia, force: true, None);
+
+        var rows = await _db.Store.GetFieldsAsync([Magia], null, None);
+        Assert.Equal(("Magireco", MetadataSources.Manual), Value(rows, "ja-Latn", MetadataFields.Name));
+        Assert.Equal(("From TMDB.", MetadataSources.Tmdb), Value(rows, "en-US", MetadataFields.Overview));
+    }
+
+    [Fact]
+    public async Task An_item_with_only_an_AniList_id_is_fetched_from_AniList()
+    {
+        _config.Current.EnabledLocales = ["en-US"];
+        _library.Add(FakeLibrary.WithIds(Magia, ItemKind.Series, (ProviderNames.AniList, "104051")));
+
+        Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Magia, force: false, None));
+
+        Assert.Empty(_tmdb.Calls);
+        var rows = await _db.Store.GetFieldsAsync([Magia], null, None);
+        Assert.All(rows, r => Assert.Equal(MetadataSources.AniList, r.Source));
+        Assert.Equal(["en-US", "ja-Latn"], rows.Select(r => r.Locale).Distinct().Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task An_AniList_failure_keeps_tmdbs_text_and_is_retried()
+    {
+        AddMagia();
+        _tmdb.Answer = _ => MagiaTmdb;
+        _aniList.Answer = _ => throw new HttpRequestException("AniList media 104051 failed with 503 after 4 attempt(s).");
+
+        Assert.Equal(FetchResult.Failed, await _fetcher.FetchAsync(Magia, force: false, None));
+
+        var state = await _db.Store.GetFetchStateAsync(Magia, None);
+        Assert.Equal((FetchStatus.Error, "AniList: AniList media 104051 failed with 503 after 4 attempt(s)."), (state!.Status, state.LastError));
+        Assert.Contains(await _db.Store.GetFieldsAsync([Magia], null, None), r => r.Source == MetadataSources.Tmdb);
+
+        _aniList.Answer = _ => MagiaAniList;
+        Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Magia, force: false, None));
+    }
+
+    [Fact]
+    public async Task Unknown_to_both_providers_is_skipped_with_both_reasons()
+    {
+        AddMagia();
+        _tmdb.Answer = _ => null;
+        _aniList.Answer = _ => null;
+
+        Assert.Equal(FetchResult.Skipped, await _fetcher.FetchAsync(Magia, force: false, None));
+
+        Assert.Equal(
+            "TMDB has no such title (404); AniList has no such title (404)",
+            (await _db.Store.GetFetchStateAsync(Magia, None))!.LastError);
+    }
+
+    [Fact]
+    public async Task AniList_can_be_turned_off()
+    {
+        _config.Current.AniListEnabled = false;
+        AddMagia();
+        _tmdb.Answer = _ => MagiaTmdb;
+
+        await _fetcher.FetchAsync(Magia, force: false, None);
+
+        Assert.Empty(_aniList.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)] // the item was re-identified without an AniList id
+    [InlineData(false)] // the admin turned AniList off
+    public async Task AniList_titles_go_when_AniList_no_longer_applies(bool idRemoved)
+    {
+        _config.Current.EnabledLocales = ["en-US", "ja-JP", "ja-Latn"];
+        AddMagia();
+        _tmdb.Answer = _ => MagiaTmdb;
+        await _fetcher.FetchAsync(Magia, force: false, None);
+        await _db.Store.UpsertFieldsAsync([new(Magia, "ko-Latn", MetadataFields.Name, "Kept", MetadataSources.AniList, Locked: true)], None);
+
+        if (idRemoved)
+        {
+            _library.Add(FakeLibrary.Series(Magia, "94523"));
+        }
+        else
+        {
+            _config.Current.AniListEnabled = false;
+        }
+
+        await _fetcher.FetchAsync(Magia, force: true, None);
+
+        var rows = await _db.Store.GetFieldsAsync([Magia], null, None);
+        Assert.Equal(["Kept"], rows.Where(r => r.Source == MetadataSources.AniList).Select(r => r.Value)); // locked rows stay
+        Assert.Contains(rows, r => r.Source == MetadataSources.Tmdb);
+    }
+
+    [Theory]
+    [InlineData(ItemKind.Season)]
+    [InlineData(ItemKind.Episode)]
+    public async Task Seasons_and_episodes_are_never_looked_up_on_AniList(ItemKind kind)
+    {
+        _library.Add(FakeLibrary.WithIds(Magia, kind, (ProviderNames.AniList, "104051")));
+
+        Assert.Equal(FetchResult.Skipped, await _fetcher.FetchAsync(Magia, force: false, None));
+        Assert.Empty(_aniList.Calls);
+    }
+
+    [Fact]
+    public async Task A_new_AniList_id_triggers_a_fetch()
+    {
+        _library.Add(FakeLibrary.Series(Magia, "94523"));
+        _tmdb.Answer = _ => MagiaTmdb;
+        await _fetcher.FetchAsync(Magia, force: false, None);
+
+        AddMagia(); // the AniList plugin added its id
+        Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Magia, force: false, None));
+        Assert.Equal([104051], _aniList.Calls);
+    }
+
+    private static (string Value, string Source) Value(IEnumerable<LocalizedField> rows, string locale, string field)
+    {
+        var row = Assert.Single(rows, r => r.Locale == locale && r.Field == field);
+        return (row.Value, row.Source);
+    }
+
+    private void AddMagia() =>
+        _library.Add(FakeLibrary.WithIds(Magia, ItemKind.Series, (ProviderNames.Tmdb, "94523"), (ProviderNames.AniList, "104051")));
 }
