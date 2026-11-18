@@ -6,8 +6,9 @@
 #   bash scripts/e2e-test.sh
 #
 # Temporarily restricts the test user to the Movies library (visibility check) and restores it.
-# With a TVDB key on the plugin page, also switches the providers to "TVDB over TMDB" for a moment
-# (the library is fetched again, twice) and puts the saved configuration back.
+# With a TVDB key on the plugin page, also switches titles to "TVDB, then TMDB" for a moment (the
+# library is fetched again, twice) and puts the saved configuration back. Uploads a logo and adds
+# a dictionary entry, and removes both afterwards.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -171,6 +172,53 @@ wait_all "d['Locales']['es-MX'].get('Name', {}).get('Value') == 'La cabaña del 
 [[ "$(status -X PUT -H "$A" -H 'Content-Type: application/json' --data '{"Fields":{"Name":{"Value":"x"}}}' "$base/KasuMeta/Items/00000000000000000000000000000001/es-MX")" == 404 ]] \
   && pass "an unknown item -> 404" || fail "404 unknown item"
 
+echo "Uploads"
+tmp_dir="$(mktemp -d)"
+# A 64x48 PNG header padded to 2 KB (KasuMeta reads the size from the IHDR), and an 11 MB one.
+python -I -c "
+import struct, sys
+head = b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', 64, 48)
+open(sys.argv[1], 'wb').write(head + bytes(2048 - len(head)))
+open(sys.argv[2], 'wb').write(head + bytes(11 * 1024 * 1024))
+open(sys.argv[3], 'wb').write(b'<svg xmlns=\"http://www.w3.org/2000/svg\"/>')
+" "$tmp_dir/logo.png" "$tmp_dir/big.png" "$tmp_dir/logo.svg"
+upload() { curl -sS -o "$tmp_dir/out" -w '%{http_code}' -X PUT -H "$A" -F "file=@$1" ${2:+-F "locked=$2"} "$base/KasuMeta/Items/$cabin/es-MX/Images/Logo"; }
+trap 'put_es_mx "{\"Images\":{\"Logo\":null}}" >/dev/null; rm -rf "$tmp_dir"' EXIT
+[[ "$(curl -sS -H "$U" "$base/KasuMeta/Info" | json "'uploads' in d['Features']")" == "True" ]] && pass "Info lists the uploads feature" || fail "features"
+[[ "$(upload "$tmp_dir/logo.png")" == 200 ]] && pass "PUT …/Images/Logo stores a PNG" || fail "upload: $(cat "$tmp_dir/out")"
+logo="$(batch "{\"ItemIds\":[\"$cabin\"],\"Locale\":\"es-MX\",\"Fields\":[],\"Images\":[\"Logo\"]}" | json "json.dumps(d['Items']['$cabin']['Images']['Logo'])")"
+[[ "$(json "d['Uploaded'] and (d['Width'], d['Height'], d['Source'], d['Locked']) == (64, 48, 'manual', True)" <<<"$logo")" == "True" ]] \
+  && pass "the overlay points at the upload, with its size" || fail "uploaded overlay: $logo"
+logo_url="$(json "d['Url']" <<<"$logo")"
+[[ "$(curl -sS -o "$tmp_dir/served" -w '%{http_code} %{content_type}' -H "$U" "$base/$logo_url")" == "200 image/png" ]] \
+  && cmp -s "$tmp_dir/served" "$tmp_dir/logo.png" && pass "a normal user gets the same bytes back as image/png" || fail "served upload"
+[[ "$(status "$base/$logo_url")" == 401 ]] && pass "and nobody without a token" || fail "401 upload"
+[[ "$(upload "$tmp_dir/big.png")" == 413 ]] && pass "11 MB -> 413" || fail "413: $(cat "$tmp_dir/out")"
+[[ "$(upload "$tmp_dir/logo.svg")" == 400 ]] && pass "an SVG -> 400" || fail "svg upload"
+[[ "$(status -X PUT -H "$U" -F "file=@$tmp_dir/logo.png" "$base/KasuMeta/Items/$cabin/es-MX/Images/Logo")" == 403 ]] \
+  && pass "a non-admin can't upload" || fail "403 upload"
+put_es_mx '{"Images":{"Logo":null}}' >/dev/null
+[[ "$(status -H "$U" "$base/$logo_url")" == 404 ]] && pass "null removes the upload" || fail "remove upload"
+
+echo "Genres, tags and the dictionary"
+body="$(curl -sS -H "$A" "$base/KasuMeta/Items/$cabin/All")"
+[[ "$(json "bool(d['Locales'].get('en', {}).get('Tags', {}).get('Values'))" <<<"$body")" == "True" ]] \
+  && pass "TMDB's keywords are stored as English tags" || fail "base tags: $body"
+tag="$(json "d['Locales']['en']['Tags']['Values'][0]" <<<"$body")"
+[[ "$(json "d['Locales']['es-MX']['Genres']['Source']" <<<"$body")" == "tmdb" ]] && pass "TMDB's Mexican genre names are stored" || fail "es-MX genres: $body"
+put_terms() { curl -sS -X PUT -H "$A" -H 'Content-Type: application/json' --data "$1" "$base/KasuMeta/Terms/tag/es"; }
+trap 'put_terms "$(python -I -c "import json,sys; print(json.dumps({\"Translations\": {sys.argv[1]: None}}))" "$tag")" >/dev/null; rm -rf "$tmp_dir"' EXIT
+body="$(curl -sS -H "$A" "$base/KasuMeta/Terms?kind=tag&locale=es")"
+[[ "$(json "any(t['Term'] == '''$tag''' and t['Items'] > 0 for t in d['Terms'])" <<<"$body")" == "True" ]] \
+  && pass "the dictionary lists the tags in use" || fail "terms: $body"
+put_terms "$(python -I -c "import json,sys; print(json.dumps({'Translations': {sys.argv[1]: 'e2e-traducida'}}))" "$tag")" >/dev/null
+body="$(batch "{\"ItemIds\":[\"$cabin\"],\"Locale\":\"es-MX\",\"Fields\":[\"Tags\"],\"Images\":[]}")"
+[[ "$(json "d['Items']['$cabin']['Tags']['Source'] == 'dictionary' and 'e2e-traducida' in d['Items']['$cabin']['Tags']['Values']" <<<"$body")" == "True" ]] \
+  && pass "a Spanish translation is served to es-MX at once, without a re-fetch" || fail "dictionary: $body"
+put_terms "$(python -I -c "import json,sys; print(json.dumps({'Translations': {sys.argv[1]: None}}))" "$tag")" >/dev/null
+rm -rf "$tmp_dir"
+trap - EXIT
+
 echo "Errors"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=pt-BR")" == 404 ]] && pass "no translation -> 404" || fail "404"
 [[ "$(status -H "$U" "$base/KasuMeta/Items/$antitrust?locale=bad!")" == 400 ]] && pass "bad locale -> 400" || fail "400 locale"
@@ -220,21 +268,30 @@ wait_cabin() {
   done
   return 1
 }
-if [[ "$(json "bool(d['TvdbApiKey']) and d['TmdbEnabled'] and not d['TvdbEnabled']" <<<"$saved_config")" != "True" ]]; then
-  echo "  skip TVDB checks: set a TVDB key and leave the providers on \"TMDB only\" to run them"
+status_now="$(curl -sS -H "$A" "$base/KasuMeta/Status")"
+if [[ "$(json "bool(d['TvdbApiKey'])" <<<"$saved_config")" != "True" \
+   || "$(json "'tvdb' in str(d['Sources'])" <<<"$status_now")" != "False" ]]; then
+  echo "  skip TVDB checks: set a TVDB key and list TVDB for no field to run them"
 else
   trap 'put_config "$saved_config"' EXIT
-  put_config "$(json "json.dumps({**d, 'TvdbEnabled': True, 'TmdbWeight': 40, 'TvdbWeight': 80})" <<<"$saved_config")"
+  # Text from TVDB first, then TMDB; posters from TMDB only.
+  put_config "$(json "json.dumps({**d, 'ProviderRules': [
+      {'Category': c, 'Providers': ['tvdb', 'tmdb', 'anilist']} for c in ['name', 'overview', 'tagline', 'genres', 'tags']
+    ] + [{'Category': 'image:Primary', 'Providers': ['tmdb']},
+         {'Category': 'image:Logo', 'Providers': ['tvdb', 'tmdb']},
+         {'Category': 'image:Backdrop', 'Providers': ['tvdb', 'tmdb']}]})" <<<"$saved_config")"
   wait_cabin "d['Locales']['es-MX'].get('Name', {}).get('Source') == 'tvdb'" \
-    && pass "with TVDB weighted over TMDB, the library is fetched again and TVDB's title wins" || fail "TVDB never won"
+    && pass "with TVDB first for titles, the library is fetched again and TVDB's title wins" || fail "TVDB never won"
   body="$(all)"
   [[ "$(json "d['Locales']['es-MX']['Name']['Value'] == 'La cabaña en el bosque' and d['Locales']['es-ES']['Name']['Value'] == 'La cabaña en el bosque'" <<<"$body")" == "True" ]] \
     && pass "TVDB's one Spanish title is stored for es-MX and es-ES (found by IMDb id: Cabin has no TVDB id)" || fail "tvdb spanish: $body"
   [[ "$(json "d['Locales']['ja-JP']['Tagline']['Source'] == 'tmdb'" <<<"$body")" == "True" ]] \
     && pass "TMDB fills what TVDB lacks (the Japanese tagline)" || fail "tmdb fill: $body"
+  [[ "$(json "all(i['Source'] == 'tmdb' for l in d['Locales'].values() for t, i in l.get('Images', {}).items() if t == 'Primary')" <<<"$body")" == "True" ]] \
+    && pass "posters stay TMDB's: that category lists TMDB only" || fail "poster sources: $body"
   body="$(curl -sS -H "$A" "$base/KasuMeta/Status")"
-  [[ "$(json "d['MetadataProviders'] == ['tvdb', 'tmdb'] and d['TvdbConfigured'] and d['Providers']['tvdb']['Requests'] > 0" <<<"$body")" == "True" ]] \
-    && pass "status lists TVDB first and counts its requests" || fail "status: $body"
+  [[ "$(json "d['MetadataProviders'] == ['tvdb', 'tmdb'] and d['Sources']['image:Primary'] == ['tmdb'] and d['Providers']['tvdb']['Requests'] > 0" <<<"$body")" == "True" ]] \
+    && pass "status lists the sources per field and counts TVDB's requests" || fail "status: $body"
   put_config "$saved_config"
   trap - EXIT
   wait_cabin "d['Locales']['es-MX'].get('Name', {}).get('Source') == 'tmdb' and 'tvdb' not in str(d)" \

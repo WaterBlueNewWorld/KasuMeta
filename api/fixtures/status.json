@@ -1,6 +1,6 @@
 {
   "Version": "1.0.0.0",
-  "SchemaVersion": 3,
+  "SchemaVersion": 4,
   "SearchIndex": true,
   "TmdbConfigured": true,
   "TvdbConfigured": true,
@@ -9,6 +9,42 @@
     "tvdb"
   ],
   "AniListEnabled": true,
+  "Sources": {
+    "name": [
+      "tmdb",
+      "tvdb",
+      "anilist"
+    ],
+    "overview": [
+      "tvdb",
+      "tmdb",
+      "anilist"
+    ],
+    "tagline": [
+      "tmdb",
+      "tvdb"
+    ],
+    "genres": [
+      "tmdb",
+      "tvdb",
+      "anilist"
+    ],
+    "tags": [
+      "tvdb",
+      "anilist"
+    ],
+    "image:Primary": [
+      "tmdb"
+    ],
+    "image:Logo": [
+      "tmdb"
+    ],
+    "image:Backdrop": [
+      "tmdb",
+      "tvdb"
+    ],
+    "image:Thumb": []
+  },
   "Queued": 0,
   "Items": {
     "Total": 38,

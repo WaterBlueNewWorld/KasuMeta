@@ -1,4 +1,5 @@
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.KasuMeta.Localization;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -7,7 +8,10 @@ using MediaBrowser.Controller.Library;
 namespace Jellyfin.Plugin.KasuMeta.Library;
 
 /// <summary><see cref="ILibraryItemSource"/> over Jellyfin's <see cref="ILibraryManager"/>.</summary>
-/// <remarks>Uses only APIs present in both Jellyfin 10.11 and 12.0, so a 10.11 build stays possible.</remarks>
+/// <remarks>
+/// Uses only APIs present in both Jellyfin 10.11 and 12.0, so a 10.11 build stays possible, except
+/// <c>BaseItem.OriginalLanguage</c> (12.0), kept to <see cref="OriginalLanguage"/>.
+/// </remarks>
 internal sealed class JellyfinLibraryItemSource : ILibraryItemSource
 {
     private static readonly BaseItemKind[] Kinds =
@@ -110,6 +114,29 @@ internal sealed class JellyfinLibraryItemSource : ILibraryItemSource
                 EpisodeNumber: episode.IndexNumber),
             _ => null,
         };
-        return info is null ? null : info with { Name = item.Name };
+        if (info is null)
+        {
+            return null;
+        }
+
+        // Seasons and episodes rarely carry a language of their own: their series' stands in.
+        var parent = item switch
+        {
+            Season season => season.Series,
+            Episode episode => episode.Series,
+            _ => null,
+        };
+        return info with
+        {
+            Name = item.Name,
+            OriginalLanguage = OriginalLanguage(item) ?? OriginalLanguage(parent),
+        };
     }
+
+    /// <summary>
+    /// The item's original language, normalized (<c>ja</c>), or null. <c>BaseItem.OriginalLanguage</c>
+    /// is new in Jellyfin 12 (PLAN.md §8): this is its only use.
+    /// </summary>
+    private static string? OriginalLanguage(BaseItem? item) =>
+        LocaleChain.TryNormalize(item?.OriginalLanguage, out var locale) ? locale : null;
 }

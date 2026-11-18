@@ -27,7 +27,8 @@
           "Height": 1080,
           "Source": "tmdb",
           "ResolvedLocale": "en-US",
-          "Locked": false
+          "Locked": false,
+          "Uploaded": false
         },
         "Logo": {
           "Url": "https://image.tmdb.org/t/p/original/dI5c3GuhwLIMWTKnNGEmK329onK.png",
@@ -35,7 +36,8 @@
           "Height": 718,
           "Source": "tmdb",
           "ResolvedLocale": "en-US",
-          "Locked": false
+          "Locked": false,
+          "Uploaded": false
         },
         "Primary": {
           "Url": "https://image.tmdb.org/t/p/original/9PXyfcJe53A9qFkcj5dkTJwIWoS.jpg",
@@ -43,7 +45,8 @@
           "Height": 1500,
           "Source": "tmdb",
           "ResolvedLocale": "en-US",
-          "Locked": false
+          "Locked": false,
+          "Uploaded": false
         }
       },
       "UpdatedAt": "2026-11-17T06:29:01+00:00"
@@ -74,7 +77,8 @@
           "Height": 92,
           "Source": "tmdb",
           "ResolvedLocale": "es-ES",
-          "Locked": false
+          "Locked": false,
+          "Uploaded": false
         },
         "Primary": {
           "Url": "https://image.tmdb.org/t/p/original/zqGqZsOfY40ZnyzPPQq1jEVSTNf.jpg",
@@ -82,7 +86,8 @@
           "Height": 2560,
           "Source": "tmdb",
           "ResolvedLocale": "es-ES",
-          "Locked": false
+          "Locked": false,
+          "Uploaded": false
         }
       },
       "UpdatedAt": "2026-11-17T06:29:01+00:00"
@@ -136,5 +141,6 @@
   "Fetch": {
     "Status": "ok",
     "LastFetch": "2026-11-17T06:29:01+00:00"
-  }
+  },
+  "OriginalLanguage": "en"
 }

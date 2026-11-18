@@ -27,7 +27,8 @@
           "Height": 92,
           "Source": "tmdb",
           "ResolvedLocale": "es-ES",
-          "Locked": false
+          "Locked": false,
+          "Uploaded": false
         },
         "Primary": {
           "Url": "https://image.tmdb.org/t/p/original/zqGqZsOfY40ZnyzPPQq1jEVSTNf.jpg",
@@ -35,7 +36,8 @@
           "Height": 2560,
           "Source": "tmdb",
           "ResolvedLocale": "es-ES",
-          "Locked": false
+          "Locked": false,
+          "Uploaded": false
         }
       },
       "UpdatedAt": "2026-11-17T06:29:01+00:00"

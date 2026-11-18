@@ -6,7 +6,14 @@ namespace Jellyfin.Plugin.KasuMeta.Providers.AniList;
 /// <param name="Locale">BCP-47 locale: <c>en-US</c>, the native one (<c>ja-JP</c>), or the romanized one (<c>ja-Latn</c>).</param>
 /// <param name="Title">The title in that locale, if any.</param>
 /// <param name="Overview">The synopsis (AniList only has English ones), if any.</param>
-public sealed record AniListTranslation(string Locale, string? Title, string? Overview);
+/// <param name="Genres">The genres (English, so on the <c>en-US</c> entry only), if any.</param>
+/// <param name="Tags">The tags that aren't spoilers (English, <c>en-US</c> entry only), if any.</param>
+public sealed record AniListTranslation(
+    string Locale,
+    string? Title,
+    string? Overview,
+    IReadOnlyList<string>? Genres = null,
+    IReadOnlyList<string>? Tags = null);
 
 /// <summary>The GraphQL envelope: <c>{"data": {"Media": …}}</c>.</summary>
 internal sealed class AniListResponse
@@ -35,6 +42,24 @@ internal sealed class AniListMediaEntry
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }
+
+    [JsonPropertyName("genres")]
+    public List<string?>? Genres { get; set; }
+
+    [JsonPropertyName("tags")]
+    public List<AniListTagEntry>? Tags { get; set; }
+}
+
+internal sealed class AniListTagEntry
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("isMediaSpoiler")]
+    public bool? IsMediaSpoiler { get; set; }
+
+    [JsonPropertyName("isGeneralSpoiler")]
+    public bool? IsGeneralSpoiler { get; set; }
 }
 
 internal sealed class AniListTitleEntry

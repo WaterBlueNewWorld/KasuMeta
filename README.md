@@ -11,10 +11,18 @@ removing the plugin leaves the server as it was.
 
 ## Features
 
-- **Titles, overviews and taglines per locale** from TMDB, TVDB or both, fetched once per item
-  whatever the number of languages, and kept up to date as the library changes.
-- **Provider priority:** with both TMDB and TVDB on, a weight per provider decides which one's
-  value is kept for each field, image and locale; the other fills only what it lacks.
+- **Titles, overviews, taglines, genres and tags per locale** from TMDB, TVDB and AniList,
+  fetched once per item whatever the number of languages, and kept up to date as the library
+  changes.
+- **Sources per field:** choose, for titles, overviews, taglines, genres, tags and each image
+  type, which providers they come from and in what order. For each language the first provider
+  with a value wins and the next ones fill what it lacks: a title TVDB doesn't have in Spanish
+  comes from TMDB, while posters can come from TMDB only.
+- **Original-language fallback:** with nothing in the reader's language, a field is shown in
+  the title's original language (a Japanese series' Japanese synopsis); with nothing at all, it
+  stays empty.
+- **Translated genres and tags:** TMDB's own genre names per language, and an admin dictionary
+  that translates every other (English) genre and tag for the whole library at once.
 - **Localized artwork:** posters, logos and backdrops per language and region (a Mexican poster
   is not a Spanish one).
 - **Fallback per field:** `es-MX` falls back to `es-ES` when TMDB has a Spanish overview but no
@@ -25,8 +33,9 @@ removing the plugin leaves the server as it was.
   text matches anywhere in a title.
 - **Anime titles from AniList** for items with an AniList id: English, native and romaji titles
   where TMDB and TVDB have none. Romaji is always searchable.
-- **Manual overrides:** administrators can set and lock titles, overviews and images per
-  locale, which provider refreshes never replace.
+- **Manual overrides:** administrators can set and lock titles, overviews, genres, tags and
+  images per locale, which provider refreshes never replace. An image can be the provider's URL,
+  any other URL, or a file uploaded to the server (up to 10 MB).
 - **Respects library access:** users only ever see, or find, items they're allowed to see.
 
 ## Compatibility
@@ -60,12 +69,15 @@ Dashboard › Plugins › KasuMeta:
 |---|---|
 | Enabled locales | BCP-47 codes, e.g. `en-US, es-MX, ja-JP`. Translations are kept for these locales and their fallbacks. |
 | Fall back to the base language | Lets `es-MX` be answered with `es` or `es-ES`. |
-| Titles, overviews and artwork from | **TMDB only** (the default), **TVDB only**, or **TMDB and TVDB, by priority weight**. |
-| TMDB / TVDB priority weight | 0–100, shown when both are used. For each field (title, overview, tagline) or image type, and each locale, the provider with the higher weight wins and the other fills only what it lacks. A tie goes to TMDB. |
-| TMDB API key | A v3 key or a v4 read access token. Needed when TMDB is used. It stays on the server; clients never see it. |
-| TVDB API key, subscriber PIN | A TVDB v4 key, needed when TVDB is used; the PIN only for a user-supported key. Both stay on the server. |
-| Anime titles from AniList | On by default; needs no key. Items need an AniList id, as set by Jellyfin's AniList metadata plugin or by hand under the item's External IDs. |
+| Use the original language when nothing else exists | On by default. A field with nothing in the reader's language (nor, with the setting above, another region of it) is served in the item's original language. Applies even with base-language fallback off. |
+| Sources per field | For titles, overviews, taglines, genres, tags, posters, logos and backdrops: up to three providers, first choice first. For each language the first one with a value wins; the next ones fill what it lacks. A provider is used only when some field lists it and it is set up. |
+| TMDB API key | A v3 key or a v4 read access token. Needed when TMDB is listed. It stays on the server; clients never see it. |
+| TVDB API key, subscriber PIN | A TVDB v4 key, needed when TVDB is listed; the PIN only for a user-supported key. Both stay on the server. |
 | Refresh interval | How old a translation may get before it's fetched again. |
+
+Until the page is saved, an install upgraded from 1.1 keeps its old choice: TMDB and TVDB as
+they were turned on, ordered by their weights, then AniList. AniList needs no key; items need an
+AniList id, as set by Jellyfin's AniList metadata plugin or by hand under the item's External IDs.
 
 After the key is set, the "Fetch missing translations" task fetches the whole library: one
 TMDB request per item, at most 20 a second. AniList allows 30 requests a minute, so anime
@@ -77,9 +89,19 @@ the series' default episode order), each lookup one request more; at most 10 req
 TVDB has one translation per language rather than per country, so its Spanish is stored for
 every enabled Spanish locale (`es-MX`, `es-ES`): where TVDB wins, both show the same text.
 
-Changing which providers are used, or which one wins, re-queues the library: each item is
-fetched again from its providers (one request per item and provider). Changing the weights
-without changing which one is higher costs nothing.
+Changing which providers a field comes from, or setting the key of a listed provider, re-queues
+the library: each item is fetched again from its providers (one request per item and provider).
+
+**Genres and tags.** TMDB names its genres in many languages (two cached genre lists per
+language a day). Every other genre and tag (TMDB's keywords, TVDB's and AniList's genres and
+tags) is English. Those are kept as the item's English terms, and the **Genre and tag
+dictionary** on the same page translates them for the whole library: pick genres or tags and a
+language, and type the translations. They're served at once, without a re-fetch; terms with no
+translation stay in English.
+
+**Original language.** Each item's original language comes from Jellyfin (for seasons and
+episodes, their series'), else from TMDB or TVDB. Its values are kept even when that language
+isn't enabled, so they can be served as the last resort.
 
 The **Status** panel on the same page shows the progress (items waiting, fetched, failed), the
 latest failures with the items' names, and each provider's requests, retries and failures since
@@ -96,25 +118,31 @@ JSON is PascalCase, as everywhere in Jellyfin, and empty fields are left out. Th
 | Route | Use |
 |---|---|
 | `GET /KasuMeta/Info` | Capability check: a 404 means the plugin isn't installed |
-| `POST /KasuMeta/Items/Batch` | Titles, overviews, taglines and images for up to 200 items (one call per grid page) |
+| `POST /KasuMeta/Items/Batch` | Titles, overviews, taglines, genres, tags and images for up to 200 items (one call per grid page) |
 | `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's localized data (detail page) |
 | `GET /KasuMeta/Search?q=cabana&locale=es-MX` | Find items by their localized names |
 | `GET /KasuMeta/Status` | Admin: fetch progress, recent failures and provider counters |
 | `GET /KasuMeta/Items/{itemId}/All` | Admin: every stored locale of an item, with sources, locks and fetch state |
 | `PUT /KasuMeta/Items/{itemId}/{locale}` | Admin: set (and lock) or remove manual values |
 | `POST /KasuMeta/Items/{itemId}/Refresh` | Admin: re-fetch an item from its providers |
+| `PUT /KasuMeta/Items/{itemId}/{locale}/Images/{type}` | Admin: upload an image file (multipart `file`, JPEG/PNG/WebP/GIF, at most 10 MB) |
+| `GET /KasuMeta/Items/{itemId}/{locale}/Images/{type}` | An uploaded image file (overlays point here when `Uploaded` is true) |
+| `GET /KasuMeta/Terms?kind=genre&locale=es` | Admin: the genre or tag dictionary for a language, with the terms in use |
+| `PUT /KasuMeta/Terms/{kind}/{locale}` | Admin: set or remove dictionary translations |
 
 How a client uses it:
 1. Call `Info` after sign-in. If it's a 404, keep to Jellyfin's own fields. `Info.Features`
-   (`text`, `images`, `search`, `overrides`) says what this build serves.
+   (`text`, `images`, `search`, `overrides`, `genres`, `tags`, `uploads`, `terms`,
+   `original-language`) says what this build serves.
 2. Load items from Jellyfin as usual, then ask `Items/Batch` for the same ids in the user's
    locale, and show the localized values where there are some. `ResolvedLocale` says which
    locale each value really came from.
 3. Search with `Search` beside Jellyfin's own search, and fetch the returned ids from Jellyfin.
 
 The admin routes need an administrator's token or an API key. A manual value is locked by
-default. Sending `null` for a field removes it, and the provider's value comes back on the
-re-fetch that follows.
+default. Genres and tags are sent as `Values` lists. Sending `null` for a field or image removes
+it (an uploaded file too), and the provider's value comes back on the re-fetch that follows. An
+uploaded image's `Url` is relative to the server's base URL and is fetched with the user's token.
 
 ## Building
 

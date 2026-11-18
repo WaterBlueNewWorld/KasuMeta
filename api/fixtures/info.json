@@ -14,6 +14,12 @@
     "text",
     "images",
     "search",
-    "overrides"
-  ]
+    "overrides",
+    "genres",
+    "tags",
+    "uploads",
+    "terms",
+    "original-language"
+  ],
+  "FallbackToOriginalLanguage": true
 }

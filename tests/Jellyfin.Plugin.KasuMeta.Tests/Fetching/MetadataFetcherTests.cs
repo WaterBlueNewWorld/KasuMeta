@@ -60,7 +60,12 @@ public sealed class MetadataFetcherTests : IDisposable
     private readonly FakeTmdb _tmdb = new();
     private readonly FakeTvdb _tvdb = new();
     private readonly FakeAniList _aniList = new();
-    private readonly FakeConfig _config = new(new PluginConfiguration { EnabledLocales = ["en-US", "es-MX", "ja-JP"] });
+    private readonly FakeConfig _config = new(new PluginConfiguration
+    {
+        EnabledLocales = ["en-US", "es-MX", "ja-JP"],
+        TmdbApiKey = "tmdb-key",
+        TvdbApiKey = "tvdb-key",
+    });
     private readonly MetadataFetcher _fetcher;
 
     public MetadataFetcherTests()
@@ -594,7 +599,9 @@ public sealed class MetadataFetcherTests : IDisposable
 
         UseProviders(tmdb: true, tvdb: true, tmdbWeight: 20, tvdbWeight: 80);
         Assert.Equal(FetchResult.Fetched, await _fetcher.FetchAsync(Cabin, force: false, None));
-        Assert.Equal("tvdb>tmdb", (await _db.Store.GetFetchStateAsync(Cabin, None))!.ProviderIds[MetadataFetcher.ProvidersSnapshotKey]);
+        Assert.StartsWith(
+            "name=tvdb>tmdb>anilist;overview=tvdb>tmdb>anilist;tagline=tvdb>tmdb;",
+            (await _db.Store.GetFetchStateAsync(Cabin, None))!.ProviderIds[MetadataFetcher.ProvidersSnapshotKey]);
     }
 
     [Fact]
@@ -717,15 +724,27 @@ public sealed class MetadataFetcherTests : IDisposable
     [InlineData(true, true, 500, 100, new[] { "tmdb", "tvdb" })] // clamped to 100: a tie
     [InlineData(true, true, -5, 0, new[] { "tmdb", "tvdb" })] // clamped to 0: a tie
     [InlineData(false, false, 100, 50, new string[0])]
-    public void The_order_follows_the_weights(bool tmdb, bool tvdb, int tmdbWeight, int tvdbWeight, string[] expected)
+    public void Legacy_settings_order_the_providers_by_weight(bool tmdb, bool tvdb, int tmdbWeight, int tvdbWeight, string[] expected)
     {
-        var config = new PluginConfiguration { TmdbEnabled = tmdb, TvdbEnabled = tvdb, TmdbWeight = tmdbWeight, TvdbWeight = tvdbWeight };
+        var config = new PluginConfiguration
+        {
+            TmdbEnabled = tmdb,
+            TvdbEnabled = tvdb,
+            TmdbWeight = tmdbWeight,
+            TvdbWeight = tvdbWeight,
+            AniListEnabled = false,
+            TmdbApiKey = "k",
+            TvdbApiKey = "k",
+        };
 
-        Assert.Equal(expected, ProviderPriority.Order(config));
-        Assert.Equal(expected is ["tmdb"] ? null : string.Join('>', expected), ProviderPriority.Fingerprint(config));
+        var rules = SourceRules.Effective(config);
+        Assert.Equal(expected, rules[MetadataCategories.Name]);
+        Assert.Equal(expected, rules[MetadataCategories.OfImage("Primary")]);
+        Assert.Empty(rules[MetadataCategories.OfImage("Thumb")]);
+        Assert.Equal(expected, SourceRules.Usable(config));
     }
 
-    private void UseProviders(bool tmdb, bool tvdb, int tmdbWeight = ProviderPriority.DefaultTmdbWeight, int tvdbWeight = ProviderPriority.DefaultTvdbWeight)
+    private void UseProviders(bool tmdb, bool tvdb, int tmdbWeight = 100, int tvdbWeight = 50)
     {
         _config.Current.TmdbEnabled = tmdb;
         _config.Current.TvdbEnabled = tvdb;

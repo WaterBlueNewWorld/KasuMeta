@@ -28,11 +28,12 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         ON CONFLICT (item_id, locale, image_type) DO UPDATE SET
           url = excluded.url, source = excluded.source,
           locked = excluded.locked, updated_at = excluded.updated_at,
-          width = excluded.width, height = excluded.height
+          width = excluded.width, height = excluded.height,
+          localized_image_file = NULL
         WHERE localized_image.locked = 0 OR excluded.locked = 1;
         """;
 
-    // An admin's write: no WHERE, so it replaces a locked row too.
+    // An admin's write: no WHERE, so it replaces a locked row too. A URL replaces an upload.
     private const string ManualFieldSql = """
         INSERT INTO localized_field (item_id, locale, field, value, source, locked, updated_at)
         VALUES ($item, $locale, $key, $value, $source, $locked, $now)
@@ -47,7 +48,18 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         ON CONFLICT (item_id, locale, image_type) DO UPDATE SET
           url = excluded.url, source = excluded.source,
           locked = excluded.locked, updated_at = excluded.updated_at,
-          width = excluded.width, height = excluded.height;
+          width = excluded.width, height = excluded.height,
+          localized_image_file = NULL;
+        """;
+
+    private const string UploadImageSql = """
+        INSERT INTO localized_image (item_id, locale, image_type, url, source, locked, updated_at, width, height, localized_image_file)
+        VALUES ($item, $locale, $key, '', $source, $locked, $now, $width, $height, $file)
+        ON CONFLICT (item_id, locale, image_type) DO UPDATE SET
+          url = '', source = excluded.source,
+          locked = excluded.locked, updated_at = excluded.updated_at,
+          width = excluded.width, height = excluded.height,
+          localized_image_file = excluded.localized_image_file;
         """;
 
     private readonly KasuMetaDatabase _database;
@@ -261,7 +273,9 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         CancellationToken cancellationToken)
     {
         return QueryByItemsAsync(
-            "SELECT item_id, locale, image_type, url, source, locked, updated_at, width, height FROM localized_image",
+            // Never the file itself: only whether there is one.
+            "SELECT item_id, locale, image_type, url, source, locked, updated_at, width, height, "
+            + "localized_image_file IS NOT NULL FROM localized_image",
             itemIds,
             locales,
             r => new LocalizedImage(
@@ -272,7 +286,8 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 r.GetString(4),
                 r.GetInt64(5) != 0,
                 r.IsDBNull(7) ? null : r.GetInt32(7),
-                r.IsDBNull(8) ? null : r.GetInt32(8))
+                r.IsDBNull(8) ? null : r.GetInt32(8),
+                r.GetInt64(9) != 0)
             {
                 UpdatedAt = DateTimeOffset.FromUnixTimeSeconds(r.GetInt64(6)),
             },
@@ -288,12 +303,13 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         {
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status, last_error, fetch_version, kind)
-                VALUES ($item, $ids, $last, $status, $error, $version, $kind)
+                INSERT INTO fetch_state (item_id, provider_ids, last_fetch, status, last_error, fetch_version, kind, original_language)
+                VALUES ($item, $ids, $last, $status, $error, $version, $kind, $original)
                 ON CONFLICT (item_id) DO UPDATE SET
                   provider_ids = excluded.provider_ids, last_fetch = excluded.last_fetch,
                   status = excluded.status, last_error = excluded.last_error,
-                  fetch_version = excluded.fetch_version, kind = excluded.kind;
+                  fetch_version = excluded.fetch_version, kind = excluded.kind,
+                  original_language = excluded.original_language;
                 """;
             command.Parameters.AddWithValue("$item", FormatId(state.ItemId));
             command.Parameters.AddWithValue("$ids", SerializeProviderIds(state.ProviderIds));
@@ -302,6 +318,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
             command.Parameters.AddWithValue("$error", (object?)state.LastError ?? DBNull.Value);
             command.Parameters.AddWithValue("$version", state.FetchVersion);
             command.Parameters.AddWithValue("$kind", (object?)state.Kind?.ToString() ?? DBNull.Value);
+            command.Parameters.AddWithValue("$original", (object?)state.OriginalLanguage ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -314,7 +331,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
         {
             await using var command = connection.CreateCommand();
             command.CommandText =
-                "SELECT provider_ids, last_fetch, status, last_error, fetch_version, kind FROM fetch_state WHERE item_id = $item;";
+                "SELECT provider_ids, last_fetch, status, last_error, fetch_version, kind, original_language FROM fetch_state WHERE item_id = $item;";
             command.Parameters.AddWithValue("$item", FormatId(itemId));
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -329,7 +346,8 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 ParseStatus(reader.GetString(2)),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetInt32(4),
-                reader.IsDBNull(5) ? null : ParseKind(reader.GetString(5)));
+                reader.IsDBNull(5) ? null : ParseKind(reader.GetString(5)),
+                reader.IsDBNull(6) ? null : reader.GetString(6));
         }
     }
 
@@ -592,7 +610,7 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
             {
                 await using var command = connection.CreateCommand();
                 command.CommandText = """
-                    SELECT item_id, provider_ids, last_fetch, last_error, fetch_version, kind FROM fetch_state
+                    SELECT item_id, provider_ids, last_fetch, last_error, fetch_version, kind, original_language FROM fetch_state
                     WHERE status = 'error'
                     ORDER BY COALESCE(last_fetch, 0) DESC, item_id
                     LIMIT $limit;
@@ -608,7 +626,8 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                         FetchStatus.Error,
                         reader.IsDBNull(3) ? null : reader.GetString(3),
                         reader.GetInt32(4),
-                        reader.IsDBNull(5) ? null : ParseKind(reader.GetString(5))));
+                        reader.IsDBNull(5) ? null : ParseKind(reader.GetString(5)),
+                        reader.IsDBNull(6) ? null : reader.GetString(6)));
                 }
             }
         }
@@ -639,6 +658,220 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <inheritdoc />
+    public async Task SetUploadedImageAsync(LocalizedImage image, byte[] file, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(file);
+        if (file.Length == 0 || image.Source != MetadataSources.Manual)
+        {
+            throw new ArgumentException("An upload is a non-empty manual image.", nameof(image));
+        }
+
+        RequireKnown(image.ImageType, LocalizedImageTypes.All, nameof(LocalizedImage.ImageType));
+        RequireLocale(image.Locale);
+
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = UploadImageSql;
+            command.Parameters.AddWithValue("$item", FormatId(image.ItemId));
+            command.Parameters.AddWithValue("$locale", image.Locale);
+            command.Parameters.AddWithValue("$key", image.ImageType);
+            command.Parameters.AddWithValue("$source", image.Source);
+            command.Parameters.AddWithValue("$locked", image.Locked ? 1 : 0);
+            command.Parameters.AddWithValue("$now", _time.GetUtcNow().ToUnixTimeSeconds());
+            command.Parameters.AddWithValue("$width", (object?)image.Width ?? DBNull.Value);
+            command.Parameters.AddWithValue("$height", (object?)image.Height ?? DBNull.Value);
+            command.Parameters.Add("$file", SqliteType.Blob).Value = file;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<(byte[] Data, DateTimeOffset UpdatedAt)?> GetImageFileAsync(
+        Guid itemId,
+        string locale,
+        string imageType,
+        CancellationToken cancellationToken)
+    {
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT localized_image_file, updated_at FROM localized_image
+                WHERE item_id = $item AND locale = $locale AND image_type = $type AND localized_image_file IS NOT NULL;
+                """;
+            command.Parameters.AddWithValue("$item", FormatId(itemId));
+            command.Parameters.AddWithValue("$locale", locale);
+            command.Parameters.AddWithValue("$type", imageType);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            return ((byte[])reader.GetValue(0), DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(1)));
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Guid, string>> GetOriginalLanguagesAsync(
+        IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(itemIds);
+        var languages = new Dictionary<Guid, string>();
+        if (itemIds.Count == 0)
+        {
+            return languages;
+        }
+
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            foreach (var chunk in itemIds.Distinct().Chunk(ChunkSize))
+            {
+                await using var command = connection.CreateCommand();
+                var sql = new StringBuilder(
+                    "SELECT item_id, original_language FROM fetch_state WHERE original_language IS NOT NULL AND item_id IN (");
+                AppendParameters(command, sql, "$i", chunk.Select(FormatId));
+                command.CommandText = sql.Append(");").ToString();
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    languages[ParseId(reader.GetString(0))] = reader.GetString(1);
+                }
+            }
+        }
+
+        return languages;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TermTranslation>> GetTermsAsync(string kind, string? locale, CancellationToken cancellationToken)
+    {
+        RequireKnown(kind, TermKinds.All, nameof(kind));
+        var terms = new List<TermTranslation>();
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT term, locale, value FROM term_translation
+                WHERE kind = $kind AND ($locale IS NULL OR locale = $locale)
+                ORDER BY term COLLATE NOCASE, locale;
+                """;
+            command.Parameters.AddWithValue("$kind", kind);
+            command.Parameters.AddWithValue("$locale", (object?)locale ?? DBNull.Value);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                terms.Add(new TermTranslation(kind, reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+            }
+        }
+
+        return terms;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> SetTermsAsync(
+        string kind,
+        string locale,
+        IReadOnlyDictionary<string, string?> translations,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(translations);
+        RequireKnown(kind, TermKinds.All, nameof(kind));
+        RequireLocale(locale);
+        var now = _time.GetUtcNow().ToUnixTimeSeconds();
+        var changed = 0;
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            var transaction = (SqliteTransaction)await connection
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                foreach (var (term, value) in translations)
+                {
+                    if (string.IsNullOrWhiteSpace(term))
+                    {
+                        throw new ArgumentException("Terms must not be empty.", nameof(translations));
+                    }
+
+                    await using var command = connection.CreateCommand();
+                    command.Transaction = transaction;
+                    command.Parameters.AddWithValue("$kind", kind);
+                    command.Parameters.AddWithValue("$term", term.Trim());
+                    command.Parameters.AddWithValue("$locale", locale);
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        command.CommandText = "DELETE FROM term_translation WHERE kind = $kind AND term = $term AND locale = $locale;";
+                    }
+                    else
+                    {
+                        command.CommandText = """
+                            INSERT INTO term_translation (kind, term, locale, value, updated_at)
+                            VALUES ($kind, $term, $locale, $value, $now)
+                            ON CONFLICT (kind, term, locale) DO UPDATE SET
+                              value = excluded.value, updated_at = excluded.updated_at;
+                            """;
+                        command.Parameters.AddWithValue("$value", value.Trim());
+                        command.Parameters.AddWithValue("$now", now);
+                    }
+
+                    changed += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return changed;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TermUse>> GetTermsInUseAsync(string kind, CancellationToken cancellationToken)
+    {
+        RequireKnown(kind, TermKinds.All, nameof(kind));
+        var items = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var spelling = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT item_id, value FROM localized_field
+                WHERE field = $field AND (locale = 'en' OR locale LIKE 'en-%');
+                """;
+            command.Parameters.AddWithValue("$field", TermKinds.FieldOf(kind));
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var item = reader.GetString(0);
+                foreach (var term in ListValues.Parse(reader.GetString(1)))
+                {
+                    spelling.TryAdd(term, term);
+                    if (!items.TryGetValue(term, out var set))
+                    {
+                        items[term] = set = new HashSet<string>(StringComparer.Ordinal);
+                    }
+
+                    set.Add(item);
+                }
+            }
+        }
+
+        return items
+            .Select(p => new TermUse(spelling[p.Key], p.Value.Count))
+            .OrderBy(t => t.Term, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     internal static string FormatId(Guid id) => id.ToString("N", CultureInfo.InvariantCulture);

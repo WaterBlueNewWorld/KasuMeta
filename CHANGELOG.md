@@ -6,6 +6,40 @@ the release's three parts plus `.0` (release 1.0.0 is plugin version 1.0.0.0).
 
 ## [Unreleased]
 
+Database schema 4 (applied on start; there's no way back to 1.1 without restoring a backup). The
+library is fetched once more after the upgrade, for the new genres, tags and original-language
+values.
+
+### Added
+- **Sources per field:** titles, overviews, taglines, genres, tags, posters, logos and backdrops
+  each have their own ordered list of providers (TMDB, TVDB, AniList). For each language the
+  first provider with a value wins and the next ones fill what it lacks, so a title missing on
+  TVDB in Spanish comes from TMDB. A provider is queried when some field lists it and it is set
+  up; a listed provider without a key is skipped, not an error.
+- **Original-language fallback** (`FallbackToOriginalLanguage`, on by default): a field with
+  nothing in the requested language is served in the item's original language, even with
+  base-language fallback off; with nothing in any language it stays empty. The original language
+  comes from Jellyfin, else TMDB or TVDB, and its values are stored even when it isn't enabled.
+- **Genres and tags** (`Genres`, `Tags` in overlays; `genres`, `tags` fields): TMDB's genres in
+  every enabled language, and English genres and tags from TMDB's keywords, TVDB and AniList
+  (spoiler tags left out).
+- **Genre and tag dictionary:** `GET /KasuMeta/Terms` and `PUT /KasuMeta/Terms/{kind}/{locale}`,
+  and a section on the plugin page, translate the English terms for the whole library at serve
+  time (`Source: dictionary`).
+- **Image uploads:** `PUT /KasuMeta/Items/{itemId}/{locale}/Images/{type}` stores a JPEG, PNG,
+  WebP or GIF of at most 10 MB in the new `localized_image.localized_image_file` column;
+  `GET` on the same path serves it to anyone who may see the item. Overlays mark it
+  `Uploaded: true`. A URL (the provider's or another) still works as before.
+- Manual overrides take `Values` lists for genres and tags.
+- `Info.Features` adds `genres`, `tags`, `uploads`, `terms` and `original-language`;
+  `Info.FallbackToOriginalLanguage`, `Items/{id}/All`'s `OriginalLanguage` and `Status.Sources`
+  are new.
+
+### Changed
+- The TMDB/TVDB provider select, the weights and the AniList switch are replaced by the
+  per-field lists. Until the page is saved, 1.1's settings keep deciding.
+- TMDB details also ask for keywords, and images in the item's original language.
+
 ## [1.1.0] - 2026-11-18
 
 Requires **Jellyfin 12.x** (built against 12.0, tested on 12.0, 12.1 and 12.4) and a TMDB or a

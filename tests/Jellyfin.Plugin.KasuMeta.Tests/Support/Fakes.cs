@@ -143,14 +143,36 @@ internal sealed class FakeTmdb : ITmdbClient
 
     public Func<string, TmdbTitle?> Answer { get; set; } = _ => new TmdbTitle([], []);
 
-    public Task<TmdbTitle?> GetMovieAsync(int movieId, CancellationToken cancellationToken) =>
-        Call($"movie/{movieId}");
+    /// <summary>Gets or sets the genre names per (tv, locale); unknown ones answer an empty list.</summary>
+    public Func<bool, string, IReadOnlyDictionary<int, string>> GenreNames { get; set; } = (_, _) => new Dictionary<int, string>();
 
-    public Task<TmdbTitle?> GetSeriesAsync(int seriesId, CancellationToken cancellationToken) =>
-        Call($"tv/{seriesId}");
+    /// <summary>Gets the extra image languages each details call asked for.</summary>
+    public List<IReadOnlyCollection<string>?> ExtraImageLanguages { get; } = [];
 
-    public Task<TmdbTitle?> GetSeasonAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken) =>
+    public Task<TmdbTitle?> GetMovieAsync(int movieId, CancellationToken cancellationToken, IReadOnlyCollection<string>? extraImageLanguages = null)
+    {
+        ExtraImageLanguages.Add(extraImageLanguages);
+        return Call($"movie/{movieId}");
+    }
+
+    public Task<TmdbTitle?> GetSeriesAsync(int seriesId, CancellationToken cancellationToken, IReadOnlyCollection<string>? extraImageLanguages = null)
+    {
+        ExtraImageLanguages.Add(extraImageLanguages);
+        return Call($"tv/{seriesId}");
+    }
+
+    public Task<TmdbTitle?> GetSeasonAsync(
+        int seriesId,
+        int seasonNumber,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? extraImageLanguages = null) =>
         Call($"tv/{seriesId}/season/{seasonNumber}");
+
+    public Task<IReadOnlyDictionary<int, string>> GetGenreNamesAsync(bool tv, string locale, CancellationToken cancellationToken)
+    {
+        Calls.Add($"genre/{(tv ? "tv" : "movie")}/list?language={locale}");
+        return Task.FromResult(GenreNames(tv, locale));
+    }
 
     public Task<TmdbTitle?> GetEpisodeAsync(int seriesId, int seasonNumber, int episodeNumber, CancellationToken cancellationToken) =>
         Call($"tv/{seriesId}/season/{seasonNumber}/episode/{episodeNumber}");

@@ -21,16 +21,28 @@ info:
       has `FallbackToBaseLanguage` on. Scripts never stand in for each other: Traditional and
       Simplified Chinese stay apart, and so do romanized titles (`ja-Latn`, romaji) and
       Japanese-script ones (`ja-JP`). `ResolvedLocale` says which one was served.
-    - **Sources:** TMDB first. For movies and series with an AniList id, AniList fills what TMDB
-      lacks: romaji as `ja-Latn` (`zh-Latn`, `ko-Latn` for Chinese and Korean titles), and English
-      or native titles and English synopses TMDB has none for. Romaji is stored even when
-      `ja-Latn` isn't among the enabled locales, so Search finds an anime by its romaji name from
-      any locale; it's served only when `ja-Latn` itself is asked for. A manual value beats both.
-    - **Images:** localized art from TMDB (posters as `Primary`, `Logo`, `Backdrop`), chosen per
-      locale: raster before SVG, then by TMDB votes. `Url` is the original file; TMDB serves
+    - **Original language:** when nothing resolves in the requested language, a field (or image
+      type) is served in the item's original language (a Japanese series' Japanese synopsis), if
+      the server has `FallbackToOriginalLanguage` on, even when `FallbackToBaseLanguage` is off.
+      With nothing in any of them the field is absent.
+    - **Sources:** the admin picks, per category (titles, overviews, taglines, genres, tags, each
+      image type), which providers (TMDB, TVDB, AniList) it comes from and in what order: for each
+      locale the first one with a value wins and the next ones fill what it lacks, so a title TVDB
+      lacks in Spanish comes from TMDB. For movies and series with an AniList id, AniList also
+      brings romaji as `ja-Latn` (`zh-Latn`, `ko-Latn` for Chinese and Korean titles). Romaji is
+      stored even when `ja-Latn` isn't among the enabled locales, so Search finds an anime by its
+      romaji name from any locale; it's served only when `ja-Latn` itself is asked for. A manual
+      value beats them all.
+    - **Genres and tags:** lists of terms. TMDB names its genres in many languages; every other
+      provider term is English, and the admin's dictionary (`Terms`) translates those at serve
+      time (`Source: dictionary`; terms it lacks stay in English).
+    - **Images:** localized art from the providers (posters as `Primary`, `Logo`, `Backdrop`),
+      chosen per locale: raster before SVG, then by votes. `Url` is the original file; TMDB serves
       smaller copies at the same path with `/original/` replaced by `/w342/`, `/w500/` or `/w780/`
       (logos: `/w300/`, `/w500/`), with `Access-Control-Allow-Origin: *`. Textless art isn't
-      localized, so it's left to Jellyfin's own images.
+      localized, so it's left to Jellyfin's own images. An image an admin uploaded has
+      `Uploaded: true` and a `Url` relative to the server's base URL, fetched with the client's
+      Jellyfin token.
     - **Search:** over localized names in every stored locale, so a title is found by its name
       in any enabled language. Case and accents are ignored ("cabana" finds "La cabaña del
       terror"), every word must match, the last word matches as a prefix (type-ahead), and text
@@ -92,7 +104,7 @@ paths:
           content:
             application/json:
               schema: { type: string }
-              example: "Unknown field 'Rating'. Known: name, overview, sort_name, tagline."
+              example: "Unknown field 'Rating'. Known: genres, name, overview, sort_name, tagline, tags."
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: A request with neither a user nor an API key.
@@ -182,6 +194,7 @@ paths:
                 Name: { Value: "El viaje de Chihiro" }
                 Tagline: { Value: "Corrección rápida", Locked: false }
                 Overview: null
+                Genres: { Values: ["Animación", "Fantasía"] }
               Images:
                 Logo: null
       responses:
@@ -193,12 +206,146 @@ paths:
         "400":
           description: >
             Bad locale, unknown key, a key given twice (`SortName` and `sort_name`), empty text,
-            text over 10,000 characters, an image URL that isn't absolute http(s) or is over 2,048
+            text over 10,000 characters, a genre or tag list that is empty, has over 100 terms or
+            a term over 200 characters, an image URL that isn't absolute http(s) or is over 2,048
             characters, or nothing to change. The body is a message string.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/NotAdmin" }
         "404":
           description: No such item in the library.
+  /KasuMeta/Items/{itemId}/{locale}/Images/{imageType}:
+    parameters:
+      - { $ref: "#/components/parameters/ItemId" }
+      - name: locale
+        in: path
+        required: true
+        schema: { type: string, example: es-MX }
+      - name: imageType
+        in: path
+        required: true
+        description: Any casing.
+        schema: { type: string, enum: [Primary, Logo, Backdrop, Thumb] }
+    put:
+      summary: "Admin: upload an image file for one item, locale and type"
+      description: >
+        Stores the file as the item's manual image for that locale and type, replacing the stored
+        one (provider, URL or earlier upload). To use a URL instead (the provider's or another), or
+        to remove the image, use `PUT Items/{itemId}/{locale}`. The format is checked by the file's
+        content: JPEG, PNG, WebP or GIF; SVG is refused. Width and Height are read from the file.
+        The response is the item's admin view after the change.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: At most 10 MiB (10,485,760 bytes).
+                locked:
+                  type: boolean
+                  default: true
+                  description: Whether provider refreshes must leave the image alone.
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemTranslations" }
+        "400":
+          description: Bad locale or image type, no `file` part, or not a JPEG, PNG, WebP or GIF. The body is a message string.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/NotAdmin" }
+        "404":
+          description: No such item in the library.
+        "413":
+          description: The file is larger than 10 MiB.
+    get:
+      summary: An uploaded image file
+      description: >
+        What an overlay's `Url` points at when `Uploaded` is true, for anyone who may see the item.
+        The `v` query parameter overlays add only changes when the file does, so the response may
+        be cached; it carries an `ETag` and answers `If-None-Match` with 304.
+      responses:
+        "200":
+          description: The file.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+        "304":
+          description: Unchanged since the ETag sent.
+        "400":
+          description: Bad locale or image type.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No uploaded file for that item, locale and type, or the item isn't visible to the caller.
+  /KasuMeta/Terms:
+    get:
+      summary: "Admin: the genre or tag dictionary for one locale"
+      description: >
+        Every term the library's items carry in English, and every term the dictionary holds, with
+        its translation in the locale (absent if none) and how many items carry it. Untranslated
+        terms come first.
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema: { type: string, enum: [genre, tag] }
+        - name: locale
+          in: query
+          required: true
+          schema: { type: string, example: es-MX }
+      responses:
+        "200":
+          description: The terms.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TermList" }
+              example: { $ref: "fixtures/terms.json" }
+        "400":
+          description: Unknown kind or bad locale.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/NotAdmin" }
+  /KasuMeta/Terms/{kind}/{locale}:
+    put:
+      summary: "Admin: set or remove dictionary translations"
+      description: >
+        In one transaction. Overlays use the change at once, without a re-fetch. The response is
+        the kind's terms for the locale after the change.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema: { type: string, enum: [genre, tag] }
+        - name: locale
+          in: path
+          required: true
+          schema: { type: string, example: es-MX }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TermsRequest" }
+            example:
+              Translations:
+                Action: Acción
+                Mahou Shoujo: Chicas mágicas
+                Horror: null
+      responses:
+        "200":
+          description: Applied.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TermList" }
+        "400":
+          description: Unknown kind, bad locale, nothing to change, a term given twice, or a term or translation that is empty or over 200 characters.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/NotAdmin" }
   /KasuMeta/Items/{itemId}/Refresh:
     post:
       summary: "Admin: re-fetch one item from its providers"
@@ -283,12 +430,15 @@ components:
           items: { type: string }
           example: [en-US, es-ES, es-MX, ja-JP, zh-CN]
         FallbackToBaseLanguage: { type: boolean }
+        FallbackToOriginalLanguage:
+          type: boolean
+          description: Whether a field with nothing in the requested language is served in the item's original language.
         Features:
           type: array
           description: What this build serves. Unknown values are to be ignored.
           items:
             type: string
-            enum: [text, images, search, overrides]
+            enum: [text, images, search, overrides, genres, tags, uploads, terms, original-language]
     BatchRequest:
       type: object
       required: [ItemIds, Locale]
@@ -305,7 +455,7 @@ components:
             request). Any casing; `SortName` and `sort_name` both work.
           items:
             type: string
-            enum: [name, overview, tagline, sort_name]
+            enum: [name, overview, tagline, sort_name, genres, tags]
         Images:
           type: array
           description: >
@@ -338,6 +488,8 @@ components:
         Overview: { $ref: "#/components/schemas/LocalizedValue" }
         Tagline: { $ref: "#/components/schemas/LocalizedValue" }
         SortName: { $ref: "#/components/schemas/LocalizedValue" }
+        Genres: { $ref: "#/components/schemas/LocalizedList" }
+        Tags: { $ref: "#/components/schemas/LocalizedList" }
         Images:
           type: object
           description: Localized images keyed by Jellyfin image type; absent when there are none.
@@ -360,14 +512,36 @@ components:
         Locked:
           type: boolean
           description: An admin override that provider refreshes never replace.
+    LocalizedList:
+      type: object
+      required: [Values, Source, ResolvedLocale, Locked]
+      properties:
+        Values:
+          type: array
+          items: { type: string }
+          example: [Acción, Drama]
+        Source:
+          type: string
+          enum: [tmdb, tvdb, anilist, manual, dictionary]
+          description: "`dictionary`: the providers' English terms translated by the admin's dictionary; terms it lacks stay in English."
+        ResolvedLocale:
+          type: string
+          description: The stored locale served; differs from the request after a fallback.
+        Locked:
+          type: boolean
     LocalizedImageValue:
       type: object
-      required: [Url, Source, ResolvedLocale, Locked]
+      required: [Url, Source, ResolvedLocale, Locked, Uploaded]
       properties:
         Url:
           type: string
-          format: uri
+          description: >
+            Absolute URL of the original file; for an uploaded file (`Uploaded`), the path of
+            KasuMeta's image route relative to the server's base URL, with no leading slash.
           example: https://image.tmdb.org/t/p/original/iLIe4sykUb0NxZpSKcHZmaqbgoy.jpg
+        Uploaded:
+          type: boolean
+          description: A file an admin uploaded, served by KasuMeta (send the Jellyfin token).
         Width: { type: integer, description: "Pixel width of the original, when known." }
         Height: { type: integer, description: "Pixel height of the original, when known." }
         Source:
@@ -381,7 +555,7 @@ components:
 
     KasuMetaStatus:
       type: object
-      required: [Version, SchemaVersion, SearchIndex, TmdbConfigured, TvdbConfigured, MetadataProviders, AniListEnabled, Queued, Items, RecentErrors, Providers]
+      required: [Version, SchemaVersion, SearchIndex, TmdbConfigured, TvdbConfigured, MetadataProviders, AniListEnabled, Sources, Queued, Items, RecentErrors, Providers]
       properties:
         Version: { type: string }
         SchemaVersion: { type: integer }
@@ -392,11 +566,22 @@ components:
         TvdbConfigured: { type: boolean }
         MetadataProviders:
           type: array
-          description: The main providers turned on, highest priority first; its values win where both have one. Empty when TMDB and TVDB are both off.
+          description: The keyed providers queried (some category lists them and their key is set), usual first choice first. Empty when neither is.
           items:
             type: string
             enum: [tmdb, tvdb]
-        AniListEnabled: { type: boolean }
+        AniListEnabled:
+          type: boolean
+          description: Whether some category lists AniList.
+        Sources:
+          type: object
+          description: >
+            Per category (`name`, `overview`, `tagline`, `genres`, `tags`, `image:Primary`,
+            `image:Logo`, `image:Backdrop`, `image:Thumb`), the providers its values come from,
+            first choice first, leaving out providers that aren't set up.
+          additionalProperties:
+            type: array
+            items: { type: string, enum: [tmdb, tvdb, anilist] }
         Queued:
           type: integer
           description: Items waiting to be fetched; a backfill's progress.
@@ -467,6 +652,9 @@ components:
           description: Stored values keyed by locale, without fallback; empty when nothing is stored.
           additionalProperties: { $ref: "#/components/schemas/ItemOverlay" }
         Fetch: { $ref: "#/components/schemas/ItemFetchInfo" }
+        OriginalLanguage:
+          type: string
+          description: The item's original language (`ja`), the last-resort fallback; absent if unknown.
     ItemFetchInfo:
       type: object
       description: The item's last provider fetch; absent if the item was never queued.
@@ -487,8 +675,8 @@ components:
         Fields:
           type: object
           description: >
-            Keyed by field (Name, Overview, Tagline, SortName; any casing, `sort_name` too).
-            `null` removes the stored value.
+            Keyed by field (Name, Overview, Tagline, SortName, Genres, Tags; any casing,
+            `sort_name` too). `null` removes the stored value.
           additionalProperties:
             nullable: true
             allOf: [{ $ref: "#/components/schemas/ManualFieldValue" }]
@@ -500,12 +688,17 @@ components:
             allOf: [{ $ref: "#/components/schemas/ManualImageValue" }]
     ManualFieldValue:
       type: object
-      required: [Value]
+      description: Value for text fields, Values for Genres and Tags.
       properties:
         Value:
           type: string
           maxLength: 10000
           description: Trimmed; must not be empty.
+        Values:
+          type: array
+          maxItems: 100
+          items: { type: string, maxLength: 200 }
+          description: Genres or tags, in order; each trimmed, empty ones and repeats (ignoring case) dropped. At least one must remain.
         Locked:
           type: boolean
           default: true
@@ -521,10 +714,45 @@ components:
           description: >
             Absolute http(s) URL. Only `image.tmdb.org` URLs can be resized by swapping
             `/original/`; serve other hosts as they are. Width and Height are not known for manual
-            images.
+            images. To store a file instead, upload it with `PUT Items/{itemId}/{locale}/Images/{imageType}`.
         Locked:
           type: boolean
           default: true
+
+    TermList:
+      type: object
+      required: [Kind, Locale, Terms]
+      properties:
+        Kind: { type: string, enum: [genre, tag] }
+        Locale: { type: string }
+        Terms:
+          type: array
+          description: Untranslated terms first, then by how many items carry them.
+          items: { $ref: "#/components/schemas/TermEntry" }
+    TermEntry:
+      type: object
+      required: [Term, Items]
+      properties:
+        Term:
+          type: string
+          description: The providers' (English) term.
+        Translation:
+          type: string
+          description: Its translation in the list's locale; absent if none.
+        Items:
+          type: integer
+          description: How many items carry the term; 0 when only the dictionary has it.
+    TermsRequest:
+      type: object
+      required: [Translations]
+      properties:
+        Translations:
+          type: object
+          description: Keyed by term (any casing); a string sets its translation, `null` or an empty string removes it.
+          additionalProperties:
+            type: string
+            nullable: true
+            maxLength: 200
 
     SearchResponse:
       type: object

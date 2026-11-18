@@ -21,13 +21,20 @@ public sealed class KasuMetaStatus
     public bool TvdbConfigured { get; set; }
 
     /// <summary>
-    /// Gets or sets the main providers in use, the one whose values win first (<c>tmdb</c>,
-    /// <c>tvdb</c>); empty when both are turned off.
+    /// Gets or sets the keyed providers queried (<c>tmdb</c>, <c>tvdb</c>): listed by some category
+    /// and with their key set. Empty when neither is.
     /// </summary>
     public IReadOnlyList<string> MetadataProviders { get; set; } = [];
 
-    /// <summary>Gets or sets a value indicating whether AniList is turned on.</summary>
+    /// <summary>Gets or sets a value indicating whether some category lists AniList.</summary>
     public bool AniListEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets, per category (<c>name</c>, <c>overview</c>, <c>tagline</c>, <c>genres</c>,
+    /// <c>tags</c>, <c>image:Primary</c>, …), the providers its values come from, first choice
+    /// first, leaving out providers that aren't set up.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Sources { get; set; } = new Dictionary<string, IReadOnlyList<string>>();
 
     /// <summary>Gets or sets how many items wait in the fetch queue (a backfill's progress).</summary>
     public int Queued { get; set; }

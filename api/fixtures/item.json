@@ -17,14 +17,35 @@
     "ResolvedLocale": "es-ES",
     "Locked": false
   },
+  "Genres": {
+    "Values": [
+      "Terror",
+      "Misterio",
+      "Suspense"
+    ],
+    "Source": "tmdb",
+    "ResolvedLocale": "es-ES",
+    "Locked": false
+  },
+  "Tags": {
+    "Values": [
+      "cabaña",
+      "experimento",
+      "monster"
+    ],
+    "Source": "dictionary",
+    "ResolvedLocale": "es-ES",
+    "Locked": false
+  },
   "Images": {
     "Logo": {
-      "Url": "https://image.tmdb.org/t/p/original/5Ra18NOFKX1c82vgU0o6PyHkaRD.png",
+      "Url": "KasuMeta/Items/ff52d7c7dc1d4f1e93e5d55cd7b0f2a1/es-ES/Images/Logo?v=1795414141",
       "Width": 687,
       "Height": 290,
-      "Source": "tmdb",
+      "Source": "manual",
       "ResolvedLocale": "es-ES",
-      "Locked": false
+      "Locked": true,
+      "Uploaded": true
     },
     "Primary": {
       "Url": "https://image.tmdb.org/t/p/original/40Sjxp3rXLC3UV2Wbgxxu4HwMJK.jpg",
@@ -32,7 +53,8 @@
       "Height": 2100,
       "Source": "tmdb",
       "ResolvedLocale": "es-ES",
-      "Locked": false
+      "Locked": false,
+      "Uploaded": false
     }
   },
   "UpdatedAt": "2026-11-17T06:29:01+00:00"

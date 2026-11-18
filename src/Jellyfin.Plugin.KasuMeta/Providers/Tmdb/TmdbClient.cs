@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -14,14 +15,34 @@ namespace Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
 /// <summary>Reads translations and localized images from TMDB.</summary>
 public interface ITmdbClient
 {
-    /// <summary>Gets a movie's text and images, or null if TMDB has no such movie.</summary>
-    Task<TmdbTitle?> GetMovieAsync(int movieId, CancellationToken cancellationToken);
+    /// <summary>
+    /// Gets a movie's text, images, genres and keywords, or null if TMDB has no such movie.
+    /// Images come in the enabled locales' languages plus <paramref name="extraImageLanguages"/>
+    /// (the item's original language).
+    /// </summary>
+    Task<TmdbTitle?> GetMovieAsync(
+        int movieId,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? extraImageLanguages = null);
 
-    /// <summary>Gets a series' text and images, or null if unknown.</summary>
-    Task<TmdbTitle?> GetSeriesAsync(int seriesId, CancellationToken cancellationToken);
+    /// <summary>Gets a series' text, images, genres and keywords, or null if unknown.</summary>
+    Task<TmdbTitle?> GetSeriesAsync(
+        int seriesId,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? extraImageLanguages = null);
 
     /// <summary>Gets a season's text and posters, or null if unknown.</summary>
-    Task<TmdbTitle?> GetSeasonAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken);
+    Task<TmdbTitle?> GetSeasonAsync(
+        int seriesId,
+        int seasonNumber,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? extraImageLanguages = null);
+
+    /// <summary>
+    /// Gets TMDB's genre names in one locale by genre id (<c>/genre/{movie|tv}/list</c>), cached
+    /// for a day. Genres TMDB has no name for in that locale are absent.
+    /// </summary>
+    Task<IReadOnlyDictionary<int, string>> GetGenreNamesAsync(bool tv, string locale, CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets an episode's text (episode stills carry no language, so no images), or null if
@@ -51,6 +72,9 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
     internal const int MaxRetries = 3;
     internal static readonly Uri BaseUri = new("https://api.themoviedb.org/3/");
 
+    /// <summary>How long a genre list is reused; TMDB's genres hardly ever change.</summary>
+    internal static readonly TimeSpan GenreListLifetime = TimeSpan.FromHours(24);
+
     /// <summary>Where TMDB serves original-size images; <c>file_path</c> starts with a slash.</summary>
     internal const string ImageBase = "https://image.tmdb.org/t/p/original";
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(30);
@@ -70,6 +94,8 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         AutoReplenishment = true,
     });
 
+    private readonly ConcurrentDictionary<(bool Tv, string Locale), (DateTimeOffset Fetched, IReadOnlyDictionary<int, string> Names)> _genres = new();
+
     public TmdbClient(
         IHttpClientFactory httpClientFactory,
         IKasuMetaConfigProvider config,
@@ -85,21 +111,59 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
     /// <summary>Gets or sets how the client waits between retries (tests replace it).</summary>
     internal Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
 
-    /// <inheritdoc />
-    public Task<TmdbTitle?> GetMovieAsync(int movieId, CancellationToken cancellationToken) =>
-        GetDetailsAsync(Path($"movie/{movieId}"), cancellationToken);
+    /// <summary>Gets or sets the clock the genre cache uses (tests replace it).</summary>
+    internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
 
     /// <inheritdoc />
-    public Task<TmdbTitle?> GetSeriesAsync(int seriesId, CancellationToken cancellationToken) =>
-        GetDetailsAsync(Path($"tv/{seriesId}"), cancellationToken);
+    public Task<TmdbTitle?> GetMovieAsync(
+        int movieId,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? extraImageLanguages = null) =>
+        GetDetailsAsync(Path($"movie/{movieId}"), withKeywords: true, extraImageLanguages, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<TmdbTitle?> GetSeriesAsync(
+        int seriesId,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? extraImageLanguages = null) =>
+        GetDetailsAsync(Path($"tv/{seriesId}"), withKeywords: true, extraImageLanguages, cancellationToken);
 
     /// <inheritdoc />
     /// <remarks>
     /// Season details are heavier than /translations (they list every episode, ~45 KB) but carry
     /// the posters in the same request; requests, not bytes, are what TMDB limits.
     /// </remarks>
-    public Task<TmdbTitle?> GetSeasonAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken) =>
-        GetDetailsAsync(Path($"tv/{seriesId}/season/{seasonNumber}"), cancellationToken);
+    public Task<TmdbTitle?> GetSeasonAsync(
+        int seriesId,
+        int seasonNumber,
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? extraImageLanguages = null) =>
+        GetDetailsAsync(Path($"tv/{seriesId}/season/{seasonNumber}"), withKeywords: false, extraImageLanguages, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<int, string>> GetGenreNamesAsync(bool tv, string locale, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(locale);
+        var key = (tv, locale);
+        if (_genres.TryGetValue(key, out var cached) && Now() - cached.Fetched < GenreListLifetime)
+        {
+            return cached.Names;
+        }
+
+        var (found, body) = await GetJsonAsync<TmdbGenreListResponse>(
+                tv ? "genre/tv/list" : "genre/movie/list",
+                "language=" + Uri.EscapeDataString(TmdbLanguage(locale)),
+                cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyDictionary<int, string> names = !found || body is null
+            ? new Dictionary<int, string>()
+            : body.Genres
+                .Where(g => g.Id > 0 && !string.IsNullOrWhiteSpace(g.Name))
+                .GroupBy(g => g.Id)
+                .ToDictionary(g => g.Key, g => g.First().Name!.Trim());
+        _genres[key] = (Now(), names);
+        return names;
+    }
 
     /// <inheritdoc />
     public Task<TmdbTitle?> GetEpisodeAsync(int seriesId, int seasonNumber, int episodeNumber, CancellationToken cancellationToken) =>
@@ -179,6 +243,13 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         return result;
     }
 
+    /// <summary>TMDB's spelling of a locale: <c>es-MX</c> stays as it is; Cantonese is TMDB's <c>cn</c>.</summary>
+    internal static string TmdbLanguage(string locale)
+    {
+        var normalized = LocaleChain.TryNormalize(locale, out var n) ? n : locale;
+        return LocaleChain.Language(normalized) == "yue" ? "cn" + normalized[3..] : normalized;
+    }
+
     private static string Path(FormattableString path) => path.ToString(CultureInfo.InvariantCulture);
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -200,10 +271,11 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
     /// Builds TMDB's <c>include_image_language</c> from the enabled locales: their distinct
     /// languages (TMDB's <c>cn</c> for Cantonese). Empty when nothing usable is enabled.
     /// </summary>
-    internal static string ImageLanguages(IEnumerable<string> enabledLocales) =>
+    internal static string ImageLanguages(IEnumerable<string> enabledLocales, IEnumerable<string>? extra = null) =>
         string.Join(
             ',',
             enabledLocales
+                .Concat(extra ?? [])
                 .Select(l => LocaleChain.TryNormalize(l, out var n) ? LocaleChain.Language(n) : null)
                 .OfType<string>()
                 .Select(l => l == "yue" ? "cn" : l)
@@ -245,12 +317,19 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
             .ToList();
     }
 
-    private async Task<TmdbTitle?> GetDetailsAsync(string path, CancellationToken cancellationToken)
+    private async Task<TmdbTitle?> GetDetailsAsync(
+        string path,
+        bool withKeywords,
+        IReadOnlyCollection<string>? extraImageLanguages,
+        CancellationToken cancellationToken)
     {
-        var languages = ImageLanguages(_config.Current.EnabledLocales);
+        var languages = ImageLanguages(_config.Current.EnabledLocales, extraImageLanguages);
+        var append = "translations"
+                     + (languages.Length == 0 ? string.Empty : ",images")
+                     + (withKeywords ? ",keywords" : string.Empty);
         var query = languages.Length == 0
-            ? "append_to_response=translations"
-            : "append_to_response=translations,images&include_image_language=" + languages;
+            ? "append_to_response=" + append
+            : "append_to_response=" + append + "&include_image_language=" + languages;
         var (found, details) = await GetJsonAsync<TmdbDetailsResponse>(path, query, cancellationToken).ConfigureAwait(false);
         if (!found)
         {
@@ -265,7 +344,17 @@ public sealed class TmdbClient : ITmdbClient, IDisposable
         var translations = details.Translations is null
             ? []
             : Map(details.Translations, details.OriginalLanguage, details.OriginalTitle ?? details.OriginalName);
-        return new TmdbTitle(translations, MapImages(details.Images));
+        var genres = (details.Genres ?? [])
+            .Where(g => g.Id > 0 && !string.IsNullOrWhiteSpace(g.Name))
+            .Select(g => new TmdbGenre(g.Id, g.Name!.Trim()))
+            .ToList();
+        var keywords = ListValues.Clean((details.Keywords?.Keywords ?? details.Keywords?.Results ?? []).Select(k => k.Name));
+        return new TmdbTitle(
+            translations,
+            MapImages(details.Images),
+            LocaleFromTmdb(details.OriginalLanguage, null),
+            genres,
+            keywords);
     }
 
     private async Task<TmdbTitle?> GetPlainTranslationsAsync(string path, CancellationToken cancellationToken)

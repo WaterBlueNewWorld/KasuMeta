@@ -43,7 +43,8 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
 
     /// <summary>The query sent for every item (the recorded fixtures answer exactly this).</summary>
     internal const string Query =
-        "query ($id: Int) { Media(id: $id) { id countryOfOrigin title { romaji english native } description(asHtml: false) } }";
+        "query ($id: Int) { Media(id: $id) { id countryOfOrigin title { romaji english native } description(asHtml: false) "
+        + "genres tags { name isMediaSpoiler isGeneralSpoiler } } }";
 
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(60);
 
@@ -171,12 +172,19 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
         }
     }
 
-    /// <summary>Maps a media entry to per-locale text; entries with no text are left out.</summary>
+    /// <summary>
+    /// Maps a media entry to per-locale text; entries with no text are left out. Genres and tags
+    /// (English) go on the <c>en-US</c> entry; spoiler tags are left out.
+    /// </summary>
     internal static IReadOnlyList<AniListTranslation> Map(AniListMediaEntry media)
     {
         var (native, romanized) = LocalesFor(media.CountryOfOrigin);
         var result = new List<AniListTranslation>(3);
-        Add("en-US", media.Title?.English, CleanDescription(media.Description));
+        var genres = ListValues.Clean(media.Genres ?? []);
+        var tags = ListValues.Clean((media.Tags ?? [])
+            .Where(t => t.IsMediaSpoiler != true && t.IsGeneralSpoiler != true)
+            .Select(t => t.Name));
+        Add("en-US", media.Title?.English, CleanDescription(media.Description), genres, tags);
         if (native is not null && romanized is not null)
         {
             Add(native, media.Title?.Native, null);
@@ -185,12 +193,19 @@ public sealed partial class AniListClient : IAniListClient, IDisposable
 
         return result;
 
-        void Add(string locale, string? title, string? overview)
+        void Add(
+            string locale,
+            string? title,
+            string? overview,
+            IReadOnlyList<string>? genreList = null,
+            IReadOnlyList<string>? tagList = null)
         {
             title = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
-            if (title is not null || overview is not null)
+            genreList = genreList is { Count: > 0 } ? genreList : null;
+            tagList = tagList is { Count: > 0 } ? tagList : null;
+            if (title is not null || overview is not null || genreList is not null || tagList is not null)
             {
-                result.Add(new AniListTranslation(locale, title, overview));
+                result.Add(new AniListTranslation(locale, title, overview, genreList, tagList));
             }
         }
     }

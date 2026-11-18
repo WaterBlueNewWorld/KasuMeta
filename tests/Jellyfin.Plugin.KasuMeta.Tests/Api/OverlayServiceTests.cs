@@ -15,12 +15,15 @@ public sealed class OverlayServiceTests : IDisposable
 
     private readonly TestDatabase _db = new();
     private readonly OverlayService _service;
+    private readonly FakeConfig _config =
+        new(new PluginConfiguration { EnabledLocales = ["en-US", "es-MX", "ja-JP"], FallbackToBaseLanguage = true });
 
     public OverlayServiceTests()
     {
         _service = new OverlayService(
             _db.Store,
-            new FakeConfig(new PluginConfiguration { EnabledLocales = ["en-US", "es-MX", "ja-JP"], FallbackToBaseLanguage = true }));
+            _config,
+            new TermDictionary(_db.Store));
     }
 
     public void Dispose() => _db.Dispose();

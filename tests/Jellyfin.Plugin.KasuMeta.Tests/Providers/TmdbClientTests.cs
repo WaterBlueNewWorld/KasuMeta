@@ -159,7 +159,7 @@ public class TmdbClientTests
 
         await client.GetMovieAsync(1, None);
 
-        Assert.Equal("?append_to_response=translations", handler.Requests[0].RequestUri!.Query);
+        Assert.Equal("?append_to_response=translations,keywords", handler.Requests[0].RequestUri!.Query);
     }
 
     [Fact]
@@ -230,8 +230,8 @@ public class TmdbClientTests
 
         Assert.Equal(
             [
-                "/3/movie/129?append_to_response=translations,images&include_image_language=en,es,ja,zh",
-                "/3/tv/80834?append_to_response=translations,images&include_image_language=en,es,ja,zh",
+                "/3/movie/129?append_to_response=translations,images,keywords&include_image_language=en,es,ja,zh",
+                "/3/tv/80834?append_to_response=translations,images,keywords&include_image_language=en,es,ja,zh",
                 "/3/tv/80834/season/1?append_to_response=translations,images&include_image_language=en,es,ja,zh",
                 "/3/tv/80834/season/1/episode/3/translations",
             ],
@@ -249,7 +249,7 @@ public class TmdbClientTests
         await client.GetMovieAsync(1, None);
         await client.GetEpisodeAsync(1, 1, 1, None);
 
-        Assert.Equal($"?append_to_response=translations,images&include_image_language=en,es,ja,zh&api_key={V3Key}", handler.Requests[0].RequestUri!.Query);
+        Assert.Equal($"?append_to_response=translations,images,keywords&include_image_language=en,es,ja,zh&api_key={V3Key}", handler.Requests[0].RequestUri!.Query);
         Assert.Equal($"?api_key={V3Key}", handler.Requests[1].RequestUri!.Query);
         Assert.All(handler.Requests, r => Assert.Null(r.Headers.Authorization));
     }

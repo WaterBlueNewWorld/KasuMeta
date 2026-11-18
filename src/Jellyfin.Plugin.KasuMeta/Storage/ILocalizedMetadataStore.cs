@@ -115,4 +115,45 @@ public interface ILocalizedMetadataStore
 
     /// <summary>Removes everything stored for an item (it left the library).</summary>
     Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Stores an admin's uploaded image file as the manual image of one item, locale and type,
+    /// replacing whatever is there (locked or not, URL or file). The row's URL is empty.
+    /// </summary>
+    /// <param name="image">The row: a manual row; its URL is ignored.</param>
+    /// <param name="file">The file's bytes.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    Task SetUploadedImageAsync(LocalizedImage image, byte[] file, CancellationToken cancellationToken);
+
+    /// <summary>Gets an uploaded image file and when it was written, or null if that image is no upload.</summary>
+    Task<(byte[] Data, DateTimeOffset UpdatedAt)?> GetImageFileAsync(
+        Guid itemId,
+        string locale,
+        string imageType,
+        CancellationToken cancellationToken);
+
+    /// <summary>Gets the recorded original language of each given item that has one.</summary>
+    Task<IReadOnlyDictionary<Guid, string>> GetOriginalLanguagesAsync(
+        IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken);
+
+    /// <summary>Gets the dictionary's translations of one kind, optionally for one locale only.</summary>
+    Task<IReadOnlyList<TermTranslation>> GetTermsAsync(string kind, string? locale, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Writes dictionary translations of one kind and locale in one transaction: a value sets the
+    /// term's translation, a null removes it.
+    /// </summary>
+    /// <returns>How many rows were written or removed.</returns>
+    Task<int> SetTermsAsync(
+        string kind,
+        string locale,
+        IReadOnlyDictionary<string, string?> translations,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets the terms of one kind the library's items carry in English (the terms the dictionary
+    /// translates), with how many items carry each.
+    /// </summary>
+    Task<IReadOnlyList<TermUse>> GetTermsInUseAsync(string kind, CancellationToken cancellationToken);
 }

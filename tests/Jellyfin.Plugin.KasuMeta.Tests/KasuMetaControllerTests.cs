@@ -50,7 +50,7 @@ public sealed class KasuMetaControllerTests : IDisposable
         Assert.Equal(("KasuMeta", "1.2.3.0", KasuMetaController.ApiVersion), (info.Name, info.Version, info.ApiVersion));
         Assert.Equal(["es-MX", "ja-JP"], info.EnabledLocales);
         Assert.False(info.FallbackToBaseLanguage);
-        Assert.Equal(["text", "images", "search", "overrides"], info.Features);
+        Assert.Equal(["text", "images", "search", "overrides", "genres", "tags", "uploads", "terms", "original-language"], info.Features);
     }
 
     [Theory]
@@ -58,6 +58,9 @@ public sealed class KasuMetaControllerTests : IDisposable
     [InlineData(nameof(KasuMetaController.SetOverrides))]
     [InlineData(nameof(KasuMetaController.Refresh))]
     [InlineData(nameof(KasuMetaController.GetStatus))]
+    [InlineData(nameof(KasuMetaController.UploadImage))]
+    [InlineData(nameof(KasuMetaController.GetTerms))]
+    [InlineData(nameof(KasuMetaController.SetTerms))]
     public void Admin_routes_require_elevation(string action)
     {
         var method = typeof(KasuMetaController).GetMethod(action)!;
@@ -68,7 +71,7 @@ public sealed class KasuMetaControllerTests : IDisposable
     [Fact]
     public void Read_routes_need_no_elevation()
     {
-        foreach (var action in new[] { nameof(KasuMetaController.GetInfo), nameof(KasuMetaController.GetBatch), nameof(KasuMetaController.GetItem), nameof(KasuMetaController.Search) })
+        foreach (var action in new[] { nameof(KasuMetaController.GetInfo), nameof(KasuMetaController.GetBatch), nameof(KasuMetaController.GetItem), nameof(KasuMetaController.Search), nameof(KasuMetaController.GetUploadedImage) })
         {
             Assert.Null(typeof(KasuMetaController).GetMethod(action)!.GetCustomAttribute<AuthorizeAttribute>());
         }
@@ -533,14 +536,16 @@ public sealed class KasuMetaControllerTests : IDisposable
             claims.Add(new Claim(KasuMetaController.IsApiKeyClaim, "True"));
         }
 
+        var terms = new TermDictionary(_db.Store);
         return new KasuMetaController(
             _config,
-            new OverlayService(_db.Store, _config),
+            new OverlayService(_db.Store, _config, terms),
             new SearchService(_db.Store, _library),
             _library,
             _db.Store,
             _queue,
-            new StatusService(_db.Store, _db.Database, _queue, _stats, _library, _config))
+            new StatusService(_db.Store, _db.Database, _queue, _stats, _library, _config),
+            terms)
         {
             ControllerContext = new ControllerContext
             {

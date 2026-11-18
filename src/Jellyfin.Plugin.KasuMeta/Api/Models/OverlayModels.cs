@@ -11,7 +11,8 @@ public sealed class BatchRequest
 
     /// <summary>
     /// Gets or sets which fields to return (<c>name</c>, <c>overview</c>, <c>tagline</c>,
-    /// <c>sort_name</c>; any casing). Null means all; an empty list means none (images only).
+    /// <c>sort_name</c>, <c>genres</c>, <c>tags</c>; any casing). Null means all; an empty list
+    /// means none (images only).
     /// </summary>
     public IReadOnlyList<string>? Fields { get; set; }
 
@@ -26,13 +27,24 @@ public sealed class BatchRequest
 /// <param name="Url">
 /// Absolute URL of the original-size file. TMDB serves smaller copies at the same path with
 /// <c>/original/</c> replaced by a width such as <c>/w342/</c>, <c>/w500/</c> or <c>/w780/</c>.
+/// For an uploaded file (<paramref name="Uploaded"/>), the path of KasuMeta's image route
+/// relative to the server's base URL, with no leading slash
+/// (<c>KasuMeta/Items/{id}/{locale}/Images/{type}?v=…</c>); fetch it with the client's token.
 /// </param>
 /// <param name="Width">Pixel width of the original, if known.</param>
 /// <param name="Height">Pixel height of the original, if known.</param>
 /// <param name="Source">Who provided it.</param>
 /// <param name="ResolvedLocale">The stored locale served (see <see cref="LocalizedValue.ResolvedLocale"/>).</param>
 /// <param name="Locked">Whether an admin locked it against provider updates.</param>
-public sealed record LocalizedImageValue(string Url, int? Width, int? Height, string Source, string ResolvedLocale, bool Locked);
+/// <param name="Uploaded">Whether it is a file an admin uploaded (served by KasuMeta itself).</param>
+public sealed record LocalizedImageValue(
+    string Url,
+    int? Width,
+    int? Height,
+    string Source,
+    string ResolvedLocale,
+    bool Locked,
+    bool Uploaded = false);
 
 /// <summary>One localized value, with where it came from.</summary>
 /// <param name="Value">The text.</param>
@@ -43,6 +55,17 @@ public sealed record LocalizedImageValue(string Url, int? Width, int? Height, st
 /// </param>
 /// <param name="Locked">Whether an admin locked it against provider updates.</param>
 public sealed record LocalizedValue(string Value, string Source, string ResolvedLocale, bool Locked);
+
+/// <summary>One localized list of terms (genres, tags), with where it came from.</summary>
+/// <param name="Values">The terms, in order.</param>
+/// <param name="Source">
+/// Who provided it: <c>tmdb</c>, <c>manual</c>, …, or <c>dictionary</c> when the server translated
+/// the providers' English terms with the admin's dictionary (terms it has no translation for stay
+/// in English).
+/// </param>
+/// <param name="ResolvedLocale">The stored locale served (see <see cref="LocalizedValue.ResolvedLocale"/>).</param>
+/// <param name="Locked">Whether an admin locked it against provider updates.</param>
+public sealed record LocalizedList(IReadOnlyList<string> Values, string Source, string ResolvedLocale, bool Locked);
 
 /// <summary>The localized overlay of one item. Fields KasuMeta has nothing for are null.</summary>
 public sealed class ItemOverlay
@@ -58,6 +81,12 @@ public sealed class ItemOverlay
 
     /// <summary>Gets or sets the localized sort name (manual only so far).</summary>
     public LocalizedValue? SortName { get; set; }
+
+    /// <summary>Gets or sets the localized genres.</summary>
+    public LocalizedList? Genres { get; set; }
+
+    /// <summary>Gets or sets the localized tags.</summary>
+    public LocalizedList? Tags { get; set; }
 
     /// <summary>
     /// Gets or sets the localized images keyed by Jellyfin image type (<c>Primary</c>,

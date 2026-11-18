@@ -51,8 +51,9 @@ public sealed class StatusService
             SearchIndex = _database.SearchIndexReady,
             TmdbConfigured = !string.IsNullOrWhiteSpace(config.TmdbApiKey),
             TvdbConfigured = !string.IsNullOrWhiteSpace(config.TvdbApiKey),
-            MetadataProviders = ProviderPriority.Order(config),
-            AniListEnabled = config.AniListEnabled,
+            MetadataProviders = SourceRules.Usable(config).Where(s => s != MetadataSources.AniList).ToList(),
+            AniListEnabled = SourceRules.Usable(config).Contains(MetadataSources.AniList, StringComparer.Ordinal),
+            Sources = SourceRules.Active(config),
             Queued = _queue.Pending,
             Items = new ItemCounts(
                 summary.Counts.Values.Sum(),

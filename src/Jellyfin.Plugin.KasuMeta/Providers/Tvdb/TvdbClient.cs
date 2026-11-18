@@ -353,7 +353,12 @@ public sealed partial class TvdbClient : ITvdbClient, IDisposable
 
             return record is null
                 ? new TvdbTitle([], [])
-                : new TvdbTitle(MapTranslations(record, fillOriginal), MapImages(record.Artworks ?? record.Artwork, artworkTypes));
+                : new TvdbTitle(
+                    MapTranslations(record, fillOriginal),
+                    MapImages(record.Artworks ?? record.Artwork, artworkTypes),
+                    fillOriginal ? LocaleFromTvdb(record.OriginalLanguage) : null,
+                    ListValues.Clean((record.Genres ?? []).Select(g => g.Name)),
+                    ListValues.Clean((record.Tags ?? []).Select(t => t.Name)));
         }, cancellationToken);
 
     /// <summary>Counts a call's failure for the status page, as the other clients do.</summary>

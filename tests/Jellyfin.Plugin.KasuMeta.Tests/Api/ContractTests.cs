@@ -26,6 +26,7 @@ public class ContractTests
     [InlineData("search.json", typeof(SearchResponse))]
     [InlineData("translations.json", typeof(ItemTranslations))]
     [InlineData("status.json", typeof(KasuMetaStatus))]
+    [InlineData("terms.json", typeof(TermList))]
     public void Fixtures_round_trip_through_the_DTOs_unchanged(string fixture, Type type)
     {
         var json = Read(fixture);
@@ -56,7 +57,10 @@ public class ContractTests
                 new(id, "es-ES", LocalizedImageTypes.Logo, "https://image.tmdb.org/t/p/original/l.png", MetadataSources.Tmdb, Width: 558, Height: 92),
             ],
             CancellationToken.None);
-        var service = new OverlayService(db.Store, new FakeConfig(new PluginConfiguration { EnabledLocales = ["es-MX"] }));
+        var service = new OverlayService(
+            db.Store,
+            new FakeConfig(new PluginConfiguration { EnabledLocales = ["es-MX"] }),
+            new TermDictionary(db.Store));
         var missing = Guid.Parse("0fb78f59088fbebaaa7ec9cfb39e3e6f");
 
         var batch = await service.BuildAsync([id, missing], [id, missing], "es-MX", MetadataFields.All, LocalizedImageTypes.All, CancellationToken.None);
@@ -80,6 +84,10 @@ public class ContractTests
     [InlineData("ItemOverlay", typeof(ItemOverlay))]
     [InlineData("LocalizedValue", typeof(LocalizedValue))]
     [InlineData("LocalizedImageValue", typeof(LocalizedImageValue))]
+    [InlineData("LocalizedList", typeof(LocalizedList))]
+    [InlineData("TermList", typeof(TermList))]
+    [InlineData("TermEntry", typeof(TermEntry))]
+    [InlineData("TermsRequest", typeof(TermsRequest))]
     [InlineData("SearchResponse", typeof(SearchResponse))]
     [InlineData("SearchResult", typeof(SearchResult))]
     [InlineData("ItemTranslations", typeof(ItemTranslations))]
@@ -110,7 +118,7 @@ public class ContractTests
             .Select(kv => ((YamlScalarNode)kv.Value).Value!)
             .ToList();
 
-        Assert.Equal(6, refs.Count);
+        Assert.Equal(7, refs.Count);
         Assert.All(refs, r => Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "Contract", Path.GetFileName(r))), r));
     }
 

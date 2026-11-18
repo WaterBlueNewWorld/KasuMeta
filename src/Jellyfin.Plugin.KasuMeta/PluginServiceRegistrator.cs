@@ -54,6 +54,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService<FetchWorker>();
         serviceCollection.AddHostedService<LibraryEventsService>();
         serviceCollection.AddHostedService<ProviderChangeService>();
+        serviceCollection.AddSingleton<TermDictionary>();
         serviceCollection.AddSingleton<OverlayService>();
         serviceCollection.AddSingleton<SearchService>();
         serviceCollection.AddSingleton<StatusService>();

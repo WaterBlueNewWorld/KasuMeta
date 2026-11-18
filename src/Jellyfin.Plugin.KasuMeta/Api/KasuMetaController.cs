@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Mime;
 using System.Security.Claims;
 using Jellyfin.Plugin.KasuMeta.Api.Models;
@@ -41,6 +42,18 @@ public class KasuMetaController : ControllerBase
     /// <summary>Longest manual image URL.</summary>
     public const int MaxUrlLength = 2_048;
 
+    /// <summary>Largest uploaded image file: 10 MiB.</summary>
+    public const int MaxUploadBytes = 10 * 1024 * 1024;
+
+    /// <summary>Most terms in one manual genre or tag list.</summary>
+    public const int MaxListValues = 100;
+
+    /// <summary>Longest genre or tag (and dictionary term or translation), in UTF-16 units.</summary>
+    public const int MaxTermLength = 200;
+
+    /// <summary>Room for the multipart envelope around an upload of <see cref="MaxUploadBytes"/>.</summary>
+    private const int MultipartOverhead = 64 * 1024;
+
     /// <summary>
     /// Jellyfin's administrators-only policy (Jellyfin.Api.Constants.Policies.RequiresElevation,
     /// not on NuGet, hence the literal). An admin user or an API key passes it.
@@ -52,7 +65,8 @@ public class KasuMetaController : ControllerBase
     /// adding routes and optional properties (ApiVersion stays), so "is search there?" is asked
     /// here rather than guessed from a version number.
     /// </summary>
-    internal static readonly string[] Features = ["text", "images", "search", "overrides"];
+    internal static readonly string[] Features =
+        ["text", "images", "search", "overrides", "genres", "tags", "uploads", "terms", "original-language"];
 
     private static readonly IReadOnlySet<ItemKind> DefaultSearchKinds =
         new HashSet<ItemKind> { ItemKind.Movie, ItemKind.Series, ItemKind.Episode };
@@ -69,6 +83,7 @@ public class KasuMetaController : ControllerBase
     private readonly ILocalizedMetadataStore _store;
     private readonly IFetchQueue _queue;
     private readonly StatusService _status;
+    private readonly TermDictionary _terms;
 
     public KasuMetaController(
         IKasuMetaConfigProvider config,
@@ -77,8 +92,10 @@ public class KasuMetaController : ControllerBase
         ILibraryItemSource library,
         ILocalizedMetadataStore store,
         IFetchQueue queue,
-        StatusService status)
+        StatusService status,
+        TermDictionary terms)
     {
+        _terms = terms;
         _config = config;
         _overlays = overlays;
         _search = search;
@@ -104,7 +121,8 @@ public class KasuMetaController : ControllerBase
             ApiVersion: ApiVersion,
             EnabledLocales: config.EnabledLocales,
             FallbackToBaseLanguage: config.FallbackToBaseLanguage,
-            Features: Features);
+            Features: Features,
+            FallbackToOriginalLanguage: config.FallbackToOriginalLanguage);
     }
 
     /// <summary>Localized overlays (text and images) for many items at once (one call per grid page).</summary>
@@ -331,6 +349,17 @@ public class KasuMetaController : ControllerBase
                 continue;
             }
 
+            if (MetadataFields.ListFields.Contains(field))
+            {
+                if (!TryBuildList(raw, value, out var json, out error))
+                {
+                    return false;
+                }
+
+                setFields.Add(new LocalizedField(itemId, locale, field, json, MetadataSources.Manual, value.Locked));
+                continue;
+            }
+
             var text = value.Value?.Trim();
             if (string.IsNullOrEmpty(text))
             {
@@ -382,6 +411,321 @@ public class KasuMetaController : ControllerBase
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Validates a manual genre or tag list: 1 to <see cref="MaxListValues"/> terms, each at most
+    /// <see cref="MaxTermLength"/> long, after trimming and dropping empty and repeated ones.
+    /// </summary>
+    internal static bool TryBuildList(string raw, ManualFieldValue value, out string json, out string? error)
+    {
+        json = string.Empty;
+        error = null;
+        var values = ListValues.Clean(value.Values ?? []);
+        if (values.Count == 0)
+        {
+            error = $"Field '{raw}' needs a non-empty Values list; send null to remove it.";
+            return false;
+        }
+
+        if (values.Count > MaxListValues)
+        {
+            error = $"Field '{raw}' has more than {MaxListValues} values.";
+            return false;
+        }
+
+        if (values.Any(v => v.Length > MaxTermLength))
+        {
+            error = $"Field '{raw}' has a value longer than {MaxTermLength} characters.";
+            return false;
+        }
+
+        json = ListValues.Serialize(values)!;
+        return true;
+    }
+
+    /// <summary>
+    /// Stores an uploaded image file (JPEG, PNG, WebP or GIF, at most 10 MiB) as the manual image
+    /// of one item, locale and type, replacing the stored one (provider, URL or file). The file's
+    /// format is checked by its content; its size is read from its header.
+    /// </summary>
+    /// <param name="itemId">The item.</param>
+    /// <param name="locale">The locale the image is for.</param>
+    /// <param name="imageType">Primary, Logo, Backdrop or Thumb (any casing).</param>
+    /// <param name="file">The multipart form's <c>file</c> part.</param>
+    /// <param name="locked">The form's <c>locked</c> field: whether provider refreshes must leave the image alone. Default true.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <response code="200">Stored; the body is the item's admin view after the change.</response>
+    /// <response code="400">Bad locale or image type, no file, or not a JPEG, PNG, WebP or GIF.</response>
+    /// <response code="403">Not an administrator.</response>
+    /// <response code="404">No such item in the library.</response>
+    /// <response code="413">The file is larger than 10 MiB.</response>
+    [HttpPut("Items/{itemId}/{locale}/Images/{imageType}")]
+    [Authorize(Policy = ElevationPolicy)]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(MaxUploadBytes + MultipartOverhead)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes + MultipartOverhead)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
+    public async Task<ActionResult<ItemTranslations>> UploadImage(
+        [FromRoute] Guid itemId,
+        [FromRoute] string locale,
+        [FromRoute] string imageType,
+        IFormFile? file,
+        [FromForm] bool? locked,
+        CancellationToken cancellationToken)
+    {
+        if (!LocaleChain.TryNormalize(locale, out var normalized))
+        {
+            return BadRequest("Locale must be a BCP-47 code such as es-MX.");
+        }
+
+        if (!TryParseImageTypes([imageType], out var types, out _))
+        {
+            return BadRequest(
+                $"Unknown image type '{imageType}'. Known: {string.Join(", ", LocalizedImageTypes.All.Order(StringComparer.Ordinal))}.");
+        }
+
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest("Send the image as the multipart form's 'file' part.");
+        }
+
+        if (file.Length > MaxUploadBytes)
+        {
+            return StatusCode(StatusCodes.Status413PayloadTooLarge, $"The image is larger than {MaxUploadBytes / (1024 * 1024)} MiB.");
+        }
+
+        if (_library.GetItem(itemId) is null)
+        {
+            return NotFound();
+        }
+
+        var data = new byte[file.Length];
+        var stream = file.OpenReadStream();
+        await using (stream.ConfigureAwait(false))
+        {
+            await stream.ReadExactlyAsync(data, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (ImageHeader.Read(data) is not { } header)
+        {
+            return BadRequest("The file is not a JPEG, PNG, WebP or GIF image.");
+        }
+
+        var image = new LocalizedImage(
+            itemId,
+            normalized,
+            types.Single(),
+            string.Empty,
+            MetadataSources.Manual,
+            locked ?? true,
+            header.Width,
+            header.Height);
+        await _store.SetUploadedImageAsync(image, data, cancellationToken).ConfigureAwait(false);
+        return await _overlays.BuildAllLocalesAsync(itemId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// An uploaded localized image file, for anyone who may see the item. Overlays point here
+    /// (<c>Uploaded: true</c>); the <c>v</c> query parameter they add only busts caches.
+    /// </summary>
+    /// <response code="200">The file.</response>
+    /// <response code="304">Unchanged since the ETag sent in If-None-Match.</response>
+    /// <response code="400">Bad locale or image type.</response>
+    /// <response code="404">No uploaded file for that item, locale and type, or the item isn't visible.</response>
+    [HttpGet("Items/{itemId}/{locale}/Images/{imageType}")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif")]
+    [ProducesResponseType(StatusCodes.Status304NotModified)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> GetUploadedImage(
+        [FromRoute] Guid itemId,
+        [FromRoute] string locale,
+        [FromRoute] string imageType,
+        CancellationToken cancellationToken)
+    {
+        if (!LocaleChain.TryNormalize(locale, out var normalized))
+        {
+            return BadRequest("Locale must be a BCP-47 code such as es-MX.");
+        }
+
+        if (!TryParseImageTypes([imageType], out var types, out _))
+        {
+            return BadRequest($"Unknown image type '{imageType}'.");
+        }
+
+        if (!TryVisible([itemId], out var visible))
+        {
+            return Forbid();
+        }
+
+        if (!visible.Contains(itemId)
+            || await _store.GetImageFileAsync(itemId, normalized, types.Single(), cancellationToken).ConfigureAwait(false) is not { } stored)
+        {
+            return NotFound();
+        }
+
+        var etag = string.Create(CultureInfo.InvariantCulture, $"\"{stored.UpdatedAt.ToUnixTimeSeconds()}\"");
+        Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = "private, max-age=86400";
+        Response.Headers.XContentTypeOptions = "nosniff";
+        if (Request.Headers.IfNoneMatch.Any(v => v is not null && v.Split(',').Any(t => t.Trim() == etag)))
+        {
+            return StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        var contentType = ImageHeader.Read(stored.Data)?.ContentType ?? MediaTypeNames.Application.Octet;
+        return File(stored.Data, contentType);
+    }
+
+    /// <summary>
+    /// Admin: the genre or tag dictionary for one locale. Lists every term the library's items
+    /// carry in English and every term the dictionary holds, with its translation (if any) and
+    /// how many items use it; untranslated terms first.
+    /// </summary>
+    /// <param name="kind"><c>genre</c> or <c>tag</c>.</param>
+    /// <param name="locale">The locale of the translations.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <response code="200">The terms.</response>
+    /// <response code="400">Unknown kind or bad locale.</response>
+    /// <response code="403">Not an administrator.</response>
+    [HttpGet("Terms")]
+    [Authorize(Policy = ElevationPolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<TermList>> GetTerms(
+        [FromQuery] string? kind,
+        [FromQuery] string? locale,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseTermKind(kind, out var parsedKind))
+        {
+            return BadRequest("kind must be 'genre' or 'tag'.");
+        }
+
+        if (!LocaleChain.TryNormalize(locale, out var normalized))
+        {
+            return BadRequest("Locale must be a BCP-47 code such as es-MX.");
+        }
+
+        return await BuildTermsAsync(parsedKind, normalized, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Admin: sets or removes dictionary translations of one kind and locale, in one transaction.
+    /// Overlays use them at once, with no re-fetch.
+    /// </summary>
+    /// <response code="200">Applied; the body is the kind's terms for that locale after the change.</response>
+    /// <response code="400">Unknown kind, bad locale, nothing to change, or an empty or too long term or translation.</response>
+    /// <response code="403">Not an administrator.</response>
+    [HttpPut("Terms/{kind}/{locale}")]
+    [Authorize(Policy = ElevationPolicy)]
+    [Consumes(MediaTypeNames.Application.Json)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<TermList>> SetTerms(
+        [FromRoute] string kind,
+        [FromRoute] string locale,
+        [FromBody] TermsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!TryParseTermKind(kind, out var parsedKind))
+        {
+            return BadRequest("kind must be 'genre' or 'tag'.");
+        }
+
+        if (!LocaleChain.TryNormalize(locale, out var normalized))
+        {
+            return BadRequest("Locale must be a BCP-47 code such as es-MX.");
+        }
+
+        if (!TryBuildTerms(request, out var clean, out var error))
+        {
+            return BadRequest(error);
+        }
+
+        await _terms.SetAsync(parsedKind, normalized, clean, cancellationToken).ConfigureAwait(false);
+        return await BuildTermsAsync(parsedKind, normalized, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Parses a dictionary kind (<c>genre</c>, <c>tag</c>; any casing, plurals too).</summary>
+    internal static bool TryParseTermKind(string? raw, out string kind)
+    {
+        kind = (raw ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "GENRE" or "GENRES" => TermKinds.Genre,
+            "TAG" or "TAGS" => TermKinds.Tag,
+            _ => string.Empty,
+        };
+        return kind.Length > 0;
+    }
+
+    /// <summary>
+    /// Validates dictionary translations: at least one; terms 1 to <see cref="MaxTermLength"/>
+    /// long and not repeated (ignoring case); translations at most as long. An empty or null
+    /// translation removes the term's.
+    /// </summary>
+    internal static bool TryBuildTerms(TermsRequest request, out IReadOnlyDictionary<string, string?> translations, out string? error)
+    {
+        var clean = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        translations = clean;
+        error = null;
+        if (request.Translations is not { Count: > 0 } given)
+        {
+            error = "Nothing to change: give at least one translation.";
+            return false;
+        }
+
+        foreach (var (rawTerm, rawValue) in given)
+        {
+            var term = rawTerm?.Trim();
+            if (string.IsNullOrEmpty(term) || term.Length > MaxTermLength)
+            {
+                error = $"Terms must be 1 to {MaxTermLength} characters long.";
+                return false;
+            }
+
+            var value = rawValue?.Trim();
+            if (value is { Length: > MaxTermLength })
+            {
+                error = $"The translation of '{term}' is longer than {MaxTermLength} characters.";
+                return false;
+            }
+
+            if (!clean.TryAdd(term, string.IsNullOrEmpty(value) ? null : value))
+            {
+                error = $"Term '{term}' is given twice.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private async Task<TermList> BuildTermsAsync(string kind, string locale, CancellationToken cancellationToken)
+    {
+        var used = await _store.GetTermsInUseAsync(kind, cancellationToken).ConfigureAwait(false);
+        var stored = await _store.GetTermsAsync(kind, null, cancellationToken).ConfigureAwait(false);
+        var translations = stored
+            .Where(t => t.Locale == locale)
+            .ToDictionary(t => t.Term, t => t.Value, StringComparer.OrdinalIgnoreCase);
+        var items = used.ToDictionary(u => u.Term, u => u.Items, StringComparer.OrdinalIgnoreCase);
+        var terms = used.Select(u => u.Term)
+            .Concat(stored.Select(t => t.Term))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(t => new TermEntry(t, translations.GetValueOrDefault(t), items.GetValueOrDefault(t)))
+            .OrderBy(t => t.Translation is not null)
+            .ThenByDescending(t => t.Items)
+            .ThenBy(t => t.Term, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new TermList { Kind = kind, Locale = locale, Terms = terms };
     }
 
     /// <summary>

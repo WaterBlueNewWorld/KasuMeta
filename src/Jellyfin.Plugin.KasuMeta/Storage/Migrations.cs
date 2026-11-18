@@ -94,6 +94,23 @@ internal static class Migrations
             INSERT INTO search_name (item_id, locale, name)
             SELECT item_id, locale, value FROM localized_field WHERE field = 'name';
             """),
+
+        // Phase 6: uploaded images, the item's original language (the last-resort fallback),
+        // and the admin's genre and tag dictionary. The blob is the image row's last column and
+        // no list query selects it, so reading rows never touches its overflow pages.
+        (4, """
+            ALTER TABLE localized_image ADD COLUMN localized_image_file BLOB;
+            ALTER TABLE fetch_state ADD COLUMN original_language TEXT;
+
+            CREATE TABLE term_translation (
+              kind       TEXT    NOT NULL,                -- TermKinds
+              term       TEXT    NOT NULL COLLATE NOCASE, -- the provider's (English) term
+              locale     TEXT    NOT NULL,                -- BCP-47
+              value      TEXT    NOT NULL,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY (kind, term, locale)
+            ) WITHOUT ROWID;
+            """),
     ];
 
     /// <summary>Gets the newest schema version this build knows.</summary>

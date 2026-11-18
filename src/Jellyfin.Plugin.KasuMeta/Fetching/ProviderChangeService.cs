@@ -6,15 +6,14 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.KasuMeta.Fetching;
 
 /// <summary>
-/// Re-queues the whole library when an admin changes which main providers are used, or which of
-/// them wins (<see cref="ProviderPriority.Order"/>). The queue isn't forced: the fetcher compares
-/// each item's snapshot, which carries the provider choice, so only items fetched under another
-/// choice are fetched again. Saving the page without changing the order queues nothing.
+/// Re-queues the whole library when an admin changes which providers each category comes from,
+/// or sets up a provider a category lists (<see cref="SourceRules.Active"/>). The queue isn't
+/// forced: the fetcher compares each item's snapshot, which carries the provider choice, so only
+/// items fetched under another choice are fetched again. Saving the page without changing the
+/// choice queues nothing.
 /// </summary>
 /// <remarks>
-/// Weights matter only through the order they give: 100/50 and 90/10 store the same values, so
-/// switching between them costs no request. A real change costs one request per item and
-/// provider, as a first install does.
+/// A real change costs one request per item and provider, as a first install does.
 /// </remarks>
 internal sealed class ProviderChangeService : IHostedService
 {
@@ -69,11 +68,11 @@ internal sealed class ProviderChangeService : IHostedService
 
         var ids = _library.ListAllIds();
         var queued = ids.Count(id => _queue.Enqueue(id));
-        FetchLog.ProvidersChanged(_logger, order.Length == 0 ? "none" : order, queued, ids.Count);
+        FetchLog.ProvidersChanged(_logger, order, queued, ids.Count);
         return queued;
     }
 
-    private static string Describe(PluginConfiguration config) => string.Join('>', ProviderPriority.Order(config));
+    private static string Describe(PluginConfiguration config) => SourceRules.Describe(SourceRules.Active(config));
 
     private void OnChanged(object? sender, PluginConfiguration config)
     {

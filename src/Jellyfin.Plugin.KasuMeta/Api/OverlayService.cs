@@ -1,6 +1,7 @@
 using System.Globalization;
 using Jellyfin.Plugin.KasuMeta.Api.Models;
 using Jellyfin.Plugin.KasuMeta.Configuration;
+using Jellyfin.Plugin.KasuMeta.Fetching;
 using Jellyfin.Plugin.KasuMeta.Localization;
 using Jellyfin.Plugin.KasuMeta.Storage;
 
@@ -8,18 +9,26 @@ namespace Jellyfin.Plugin.KasuMeta.Api;
 
 /// <summary>
 /// Builds localized overlays from the store. Each field and each image type resolves its locale
-/// on its own (exact → base language → sibling), because coverage differs: TMDB may have a
-/// Mexican title but only a Spanish (Spain) overview, or a Japanese logo but no Japanese poster.
+/// on its own, because coverage differs: TMDB may have a Mexican title but only a Spanish (Spain)
+/// overview, or a Japanese logo but no Japanese poster. The order per field:
+/// <list type="number">
+/// <item>the requested locale (exact, then base language, then a sibling; see <see cref="LocaleChain.Resolve"/>);</item>
+/// <item>for genres and tags, the providers' English terms translated by the admin's dictionary;</item>
+/// <item>the item's original language, when <see cref="PluginConfiguration.FallbackToOriginalLanguage"/> is on;</item>
+/// <item>nothing: the field is left out.</item>
+/// </list>
 /// </summary>
 public sealed class OverlayService
 {
     private readonly ILocalizedMetadataStore _store;
     private readonly IKasuMetaConfigProvider _config;
+    private readonly TermDictionary _terms;
 
-    public OverlayService(ILocalizedMetadataStore store, IKasuMetaConfigProvider config)
+    public OverlayService(ILocalizedMetadataStore store, IKasuMetaConfigProvider config, TermDictionary terms)
     {
         _store = store;
         _config = config;
+        _terms = terms;
     }
 
     /// <summary>Builds the batch response for ids the caller may already see.</summary>
@@ -44,8 +53,15 @@ public sealed class OverlayService
         var images = imageTypes.Count == 0
             ? []
             : await _store.GetImagesAsync(visibleIds, null, cancellationToken).ConfigureAwait(false);
+        var originals = config.FallbackToOriginalLanguage && (fields.Count > 0 || imageTypes.Count > 0)
+            ? await _store.GetOriginalLanguagesAsync(visibleIds, cancellationToken).ConfigureAwait(false)
+            : new Dictionary<Guid, string>();
+        var terms = fields.Overlaps(MetadataFields.ListFields)
+            ? await _terms.GetAsync(cancellationToken).ConfigureAwait(false)
+            : TermSnapshot.Empty;
         var fieldsByItem = rows.Where(r => fields.Contains(r.Field)).ToLookup(r => r.ItemId);
         var imagesByItem = images.Where(i => imageTypes.Contains(i.ImageType)).ToLookup(i => i.ItemId);
+        var options = new ResolveOptions(config.FallbackToBaseLanguage, config.EnabledLocales, terms);
 
         var items = new Dictionary<string, ItemOverlay>(StringComparer.Ordinal);
         var missing = new List<string>();
@@ -53,7 +69,7 @@ public sealed class OverlayService
         {
             var key = id.ToString("N", CultureInfo.InvariantCulture);
             var overlay = visibleIds.Contains(id)
-                ? Resolve(fieldsByItem[id], imagesByItem[id], locale, config.FallbackToBaseLanguage, config.EnabledLocales)
+                ? Resolve(fieldsByItem[id], imagesByItem[id], locale, options with { OriginalLanguage = originals.GetValueOrDefault(id) })
                 : null;
             if (overlay is null)
             {
@@ -82,10 +98,11 @@ public sealed class OverlayService
         var fieldsByLocale = rows.ToLookup(r => r.Locale, StringComparer.Ordinal);
         var imagesByLocale = images.ToLookup(i => i.Locale, StringComparer.Ordinal);
         var locales = new SortedDictionary<string, ItemOverlay>(StringComparer.Ordinal);
+        var exact = new ResolveOptions(false, config.EnabledLocales, null);
         foreach (var locale in fieldsByLocale.Select(g => g.Key).Union(imagesByLocale.Select(g => g.Key), StringComparer.Ordinal))
         {
             // Exact match only: each locale shows what is stored under it.
-            if (Resolve(fieldsByLocale[locale], imagesByLocale[locale], locale, false, config.EnabledLocales) is { } overlay)
+            if (Resolve(fieldsByLocale[locale], imagesByLocale[locale], locale, exact) is { } overlay)
             {
                 locales[locale] = overlay;
             }
@@ -96,17 +113,15 @@ public sealed class OverlayService
             ItemId = itemId.ToString("N", CultureInfo.InvariantCulture),
             Locales = locales,
             Fetch = state is null ? null : new ItemFetchInfo(FormatStatus(state.Status), state.LastFetch, state.LastError),
+            OriginalLanguage = state?.OriginalLanguage,
         };
     }
 
-    private static string FormatStatus(FetchStatus status) => status switch
-    {
-        FetchStatus.Pending => "pending",
-        FetchStatus.Ok => "ok",
-        FetchStatus.Error => "error",
-        FetchStatus.Skipped => "skipped",
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
-    };
+    /// <summary>The path an uploaded image is served at, relative to the server's base URL.</summary>
+    internal static string UploadPath(Guid itemId, string locale, string imageType, DateTimeOffset updatedAt) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"KasuMeta/Items/{itemId:N}/{Uri.EscapeDataString(locale)}/Images/{imageType}?v={updatedAt.ToUnixTimeSeconds()}");
 
     /// <summary>Resolves one item's rows into an overlay, or null if nothing resolves.</summary>
     internal static ItemOverlay? Resolve(
@@ -114,14 +129,42 @@ public sealed class OverlayService
         IEnumerable<LocalizedImage> images,
         string locale,
         bool fallbackToBase,
-        IReadOnlyList<string> enabledLocales)
+        IReadOnlyList<string> enabledLocales) =>
+        Resolve(rows, images, locale, new ResolveOptions(fallbackToBase, enabledLocales, null));
+
+    /// <summary>Resolves one item's rows into an overlay, or null if nothing resolves.</summary>
+    internal static ItemOverlay? Resolve(
+        IEnumerable<LocalizedField> rows,
+        IEnumerable<LocalizedImage> images,
+        string locale,
+        ResolveOptions options)
     {
         var overlay = new ItemOverlay();
         var any = false;
 
         foreach (var field in rows.GroupBy(r => r.Field, StringComparer.Ordinal))
         {
-            if (Pick(field, r => r.Locale) is not { } row)
+            if (MetadataFields.ListFields.Contains(field.Key))
+            {
+                if (ResolveList(field.Key, field.ToList(), locale, options) is not { } list)
+                {
+                    continue;
+                }
+
+                if (field.Key == MetadataFields.Genres)
+                {
+                    overlay.Genres = list.Value;
+                }
+                else
+                {
+                    overlay.Tags = list.Value;
+                }
+
+                Seen(list.UpdatedAt);
+                continue;
+            }
+
+            if (Pick(field.ToList(), r => r.Locale, locale, options) is not { } row)
             {
                 continue;
             }
@@ -141,26 +184,24 @@ public sealed class OverlayService
 
         foreach (var type in images.GroupBy(i => i.ImageType, StringComparer.Ordinal))
         {
-            if (Pick(type, i => i.Locale) is not { } image)
+            if (Pick(type.ToList(), i => i.Locale, locale, options) is not { } image)
             {
                 continue;
             }
 
             overlay.Images ??= new Dictionary<string, LocalizedImageValue>(StringComparer.Ordinal);
             overlay.Images[type.Key] = new LocalizedImageValue(
-                image.Url, image.Width, image.Height, image.Source, image.Locale, image.Locked);
+                image.HasFile ? UploadPath(image.ItemId, image.Locale, image.ImageType, image.UpdatedAt) : image.Url,
+                image.Width,
+                image.Height,
+                image.Source,
+                image.Locale,
+                image.Locked,
+                image.HasFile);
             Seen(image.UpdatedAt);
         }
 
         return any ? overlay : null;
-
-        T? Pick<T>(IEnumerable<T> candidates, Func<T, string> localeOf)
-            where T : class
-        {
-            var byLocale = candidates.ToDictionary(localeOf, StringComparer.Ordinal);
-            var resolved = LocaleChain.Resolve(locale, byLocale.Keys, fallbackToBase, enabledLocales);
-            return resolved is not null && byLocale.TryGetValue(resolved, out var picked) ? picked : null;
-        }
 
         void Seen(DateTimeOffset updatedAt)
         {
@@ -171,4 +212,95 @@ public sealed class OverlayService
             }
         }
     }
+
+    private static string FormatStatus(FetchStatus status) => status switch
+    {
+        FetchStatus.Pending => "pending",
+        FetchStatus.Ok => "ok",
+        FetchStatus.Error => "error",
+        FetchStatus.Skipped => "skipped",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+    };
+
+    /// <summary>
+    /// The requested locale's row (exact, base, sibling); else, with an original language set,
+    /// that language's row, whatever <see cref="ResolveOptions.FallbackToBase"/> says.
+    /// </summary>
+    private static T? Pick<T>(IReadOnlyList<T> candidates, Func<T, string> localeOf, string locale, ResolveOptions options)
+        where T : class
+    {
+        var byLocale = candidates.ToDictionary(localeOf, StringComparer.Ordinal);
+        var resolved = LocaleChain.Resolve(locale, byLocale.Keys, options.FallbackToBase, options.EnabledLocales);
+        return resolved is not null && byLocale.TryGetValue(resolved, out var picked) ? picked : PickOriginal(byLocale, options);
+    }
+
+    private static T? PickOriginal<T>(Dictionary<string, T> byLocale, ResolveOptions options)
+        where T : class
+    {
+        if (options.OriginalLanguage is not { } original)
+        {
+            return null;
+        }
+
+        var resolved = LocaleChain.Resolve(original, byLocale.Keys, fallbackToBase: true, options.EnabledLocales);
+        return resolved is not null && byLocale.TryGetValue(resolved, out var picked) ? picked : null;
+    }
+
+    /// <summary>A genres or tags list: stored in the requested locale, else translated by the dictionary, else the original language's.</summary>
+    private static (LocalizedList Value, DateTimeOffset UpdatedAt)? ResolveList(
+        string field,
+        IReadOnlyList<LocalizedField> candidates,
+        string locale,
+        ResolveOptions options)
+    {
+        var byLocale = candidates.ToDictionary(r => r.Locale, StringComparer.Ordinal);
+        var resolved = LocaleChain.Resolve(locale, byLocale.Keys, options.FallbackToBase, options.EnabledLocales);
+        if (resolved is not null && AsList(byLocale[resolved]) is { } stored)
+        {
+            return stored;
+        }
+
+        if (options.Terms is { } terms
+            && LocaleChain.Resolve(MetadataFetcher.BaseTermsLocale, byLocale.Keys, fallbackToBase: true, options.EnabledLocales) is { } baseLocale)
+        {
+            var kind = field == MetadataFields.Genres ? TermKinds.Genre : TermKinds.Tag;
+            var baseRow = byLocale[baseLocale];
+            var translated = 0;
+            var values = ListValues.Parse(baseRow.Value)
+                .Select(term =>
+                {
+                    if (terms.Translate(kind, term, locale, options.FallbackToBase, options.EnabledLocales) is { } hit)
+                    {
+                        translated++;
+                        return hit.Value;
+                    }
+
+                    return term;
+                })
+                .ToList();
+            if (translated > 0)
+            {
+                return (new LocalizedList(ListValues.Clean(values), MetadataSources.Dictionary, locale, false), baseRow.UpdatedAt);
+            }
+        }
+
+        return PickOriginal(byLocale, options) is { } original && AsList(original) is { } list ? list : null;
+
+        static (LocalizedList, DateTimeOffset)? AsList(LocalizedField row)
+        {
+            var values = ListValues.Parse(row.Value);
+            return values.Count == 0 ? null : (new LocalizedList(values, row.Source, row.Locale, row.Locked), row.UpdatedAt);
+        }
+    }
+
+    /// <summary>How an overlay resolves.</summary>
+    /// <param name="FallbackToBase">The plugin's <c>FallbackToBaseLanguage</c> setting.</param>
+    /// <param name="EnabledLocales">Preferred order among siblings.</param>
+    /// <param name="Terms">The genre and tag dictionary, or null for none.</param>
+    /// <param name="OriginalLanguage">The item's original language when that fallback is on, else null.</param>
+    internal sealed record ResolveOptions(
+        bool FallbackToBase,
+        IReadOnlyList<string> EnabledLocales,
+        TermSnapshot? Terms,
+        string? OriginalLanguage = null);
 }

@@ -20,10 +20,23 @@ public sealed record TmdbTranslation(string Locale, string? Title, string? Overv
 /// <param name="Height">Pixel height of the original.</param>
 public sealed record TmdbImage(string Locale, string ImageType, string Url, int Width, int Height);
 
+/// <summary>A TMDB genre: its id, and its name in the language asked for.</summary>
+/// <param name="Id">TMDB's genre id (the same in every language).</param>
+/// <param name="Name">The name.</param>
+public sealed record TmdbGenre(int Id, string Name);
+
 /// <summary>Everything one TMDB request returns for a title.</summary>
 /// <param name="Translations">Every language's text.</param>
 /// <param name="Images">The best image per locale and type (empty for episodes).</param>
-public sealed record TmdbTitle(IReadOnlyList<TmdbTranslation> Translations, IReadOnlyList<TmdbImage> Images);
+/// <param name="OriginalLanguage">The title's original language as BCP-47 (<c>ja</c>); movies and series only.</param>
+/// <param name="Genres">The title's genres, in English; movies and series only.</param>
+/// <param name="Keywords">The title's keywords (TMDB has them in English only); movies and series only.</param>
+public sealed record TmdbTitle(
+    IReadOnlyList<TmdbTranslation> Translations,
+    IReadOnlyList<TmdbImage> Images,
+    string? OriginalLanguage = null,
+    IReadOnlyList<TmdbGenre>? Genres = null,
+    IReadOnlyList<string>? Keywords = null);
 
 /// <summary>Raw appended <c>images</c> (seasons only have posters).</summary>
 internal sealed class TmdbImagesResponse
@@ -87,6 +100,39 @@ internal sealed class TmdbDetailsResponse
 
     [JsonPropertyName("images")]
     public TmdbImagesResponse? Images { get; set; }
+
+    [JsonPropertyName("genres")]
+    public List<TmdbGenreEntry>? Genres { get; set; }
+
+    [JsonPropertyName("keywords")]
+    public TmdbKeywordsResponse? Keywords { get; set; }
+}
+
+/// <summary>Raw genre or keyword: in a title's details, or in <c>/genre/{movie|tv}/list</c>.</summary>
+internal sealed class TmdbGenreEntry
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+}
+
+/// <summary>Raw <c>/genre/{movie|tv}/list</c> response.</summary>
+internal sealed class TmdbGenreListResponse
+{
+    [JsonPropertyName("genres")]
+    public List<TmdbGenreEntry> Genres { get; set; } = [];
+}
+
+/// <summary>Raw appended <c>keywords</c>: movies list them under <c>keywords</c>, series under <c>results</c>.</summary>
+internal sealed class TmdbKeywordsResponse
+{
+    [JsonPropertyName("keywords")]
+    public List<TmdbGenreEntry>? Keywords { get; set; }
+
+    [JsonPropertyName("results")]
+    public List<TmdbGenreEntry>? Results { get; set; }
 }
 
 /// <summary>Raw <c>/translations</c> response (movie, tv, season and episode share it).</summary>

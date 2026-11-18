@@ -32,25 +32,33 @@ public enum FetchResult
 }
 
 /// <summary>
-/// Fetches one item's translations and artwork from the main providers the admin turned on
-/// (TMDB, TVDB), merges them by priority, then lets AniList fill what they left empty for movies
-/// and series with an AniList id. The order per field and locale is manual, then the main
-/// providers by weight (<see cref="ProviderPriority"/>), then AniList. Keeps only locales in the
-/// same fallback group as an enabled locale (all Spanish variants when es-MX is enabled), so the
-/// server can fall back es-MX → es-ES without storing all ~40 TMDB languages.
+/// Fetches one item's translations, genres, tags and artwork from every provider some category
+/// lists and that is set up (<see cref="SourceRules.Usable"/>), then merges them category by
+/// category: for each field (or image type) and locale, the value of the first provider in that
+/// category's list that has one (<see cref="SourceRules.Active"/>); the next ones fill what it
+/// lacks. Manual locked values always stay.
 /// </summary>
+/// <remarks>
+/// Keeps only locales in the same fallback group as an enabled locale (all Spanish variants when
+/// es-MX is enabled), so the server can fall back es-MX → es-ES without storing all ~40 TMDB
+/// languages; plus the item's original language, the last-resort fallback; plus romanized titles
+/// for search; plus English genres and tags, the terms the admin's dictionary translates.
+/// </remarks>
 public sealed class MetadataFetcher
 {
     /// <summary>
     /// Version of what a fetch stores: 1 = text, 2 = adds images, 3 = adds the item's kind (for
-    /// search), 4 = adds AniList titles. Raise it whenever a fetch starts storing something new;
-    /// the backfill then re-queues items fetched by older builds. (TVDB didn't raise it: it's
-    /// off by default, and turning it on re-queues the library through the snapshot.)
+    /// search), 4 = adds AniList titles, 5 = adds genres, tags, the original language and its
+    /// values. Raise it whenever a fetch starts storing something new; the backfill then
+    /// re-queues items fetched by older builds.
     /// </summary>
-    public const int FetchVersion = 4;
+    public const int FetchVersion = 5;
 
-    /// <summary>The fetch-snapshot key holding <see cref="ProviderPriority.Fingerprint"/>.</summary>
+    /// <summary>The fetch-snapshot key holding <see cref="SourceRules.Fingerprint"/>.</summary>
     internal const string ProvidersSnapshotKey = "KasuMeta.Providers";
+
+    /// <summary>Where provider genres and tags in English are stored: the dictionary's input.</summary>
+    internal const string BaseTermsLocale = "en";
 
     private readonly ILibraryItemSource _library;
     private readonly ILocalizedMetadataStore _store;
@@ -92,8 +100,9 @@ public sealed class MetadataFetcher
         }
 
         var config = _config.Current;
-        var order = ProviderPriority.Order(config);
-        var snapshot = Snapshot(item, config, order);
+        var rules = SourceRules.Active(config);
+        var usable = SourceRules.Usable(config);
+        var snapshot = Snapshot(item, config, usable);
         if (!force)
         {
             var state = await _store.GetFetchStateAsync(itemId, cancellationToken).ConfigureAwait(false);
@@ -105,24 +114,36 @@ public sealed class MetadataFetcher
             }
         }
 
-        // Each provider is tried on its own: one failing doesn't throw away another's text.
+        // Each provider is tried on its own: one failing doesn't throw away another's values.
         var enabled = config.EnabledLocales;
-        var fetched = false;
         var errors = new List<string>();
         var notes = new List<string>();
-        if (order.Count == 0)
+        if (usable.Count == 0)
         {
-            notes.Add("TMDB and TVDB are both turned off");
+            notes.Add("No provider that a category lists is set up");
         }
 
-        var outcomes = new List<(string Source, Outcome Outcome)>(order.Count);
-        foreach (var source in order)
+        TmdbTitle? tmdb = null;
+        TvdbTitle? tvdb = null;
+        IReadOnlyList<AniListTranslation>? aniList = null;
+        var outcomes = new Dictionary<string, Outcome>(StringComparer.Ordinal);
+        foreach (var source in usable)
         {
-            var outcome = source == MetadataSources.Tmdb
-                ? await FetchTmdbAsync(item, enabled, cancellationToken).ConfigureAwait(false)
-                : await FetchTvdbAsync(item, enabled, cancellationToken).ConfigureAwait(false);
-            outcomes.Add((source, outcome));
-            fetched |= outcome.Fields is not null;
+            Outcome outcome;
+            switch (source)
+            {
+                case MetadataSources.Tmdb:
+                    (outcome, tmdb) = await FetchTmdbAsync(item, cancellationToken).ConfigureAwait(false);
+                    break;
+                case MetadataSources.Tvdb:
+                    (outcome, tvdb) = await FetchTvdbAsync(item, cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    (outcome, aniList) = await FetchAniListAsync(item, cancellationToken).ConfigureAwait(false);
+                    break;
+            }
+
+            outcomes[source] = outcome;
             if (outcome.Note is { } note)
             {
                 notes.Add(note);
@@ -134,59 +155,64 @@ public sealed class MetadataFetcher
             }
         }
 
-        await StoreMainAsync(itemId, outcomes, cancellationToken).ConfigureAwait(false);
-
-        // AniList goes last, so that it fills only what the main providers (or an admin) left empty.
-        var aniListId = config.AniListEnabled ? AniListId(item) : null;
-        if (aniListId is null)
-        {
-            // AniList is off, or the item lost its id (re-identified): its AniList titles go.
-            await _store.ReplaceProviderFieldsAsync(itemId, MetadataSources.AniList, [], cancellationToken).ConfigureAwait(false);
-        }
-        else
+        // The original language is known only now, and decides which locales are kept.
+        var original = item.OriginalLanguage ?? tmdb?.OriginalLanguage ?? tvdb?.OriginalLanguage;
+        var rows = new Dictionary<string, (IReadOnlyList<LocalizedField> Fields, IReadOnlyList<LocalizedImage> Images)>(StringComparer.Ordinal);
+        if (tmdb is not null)
         {
             try
             {
-                if (await _aniList.GetMediaAsync(aniListId.Value, cancellationToken).ConfigureAwait(false) is { } translations)
-                {
-                    var held = (await _store.GetFieldsAsync([itemId], null, cancellationToken).ConfigureAwait(false))
-                        .Where(r => r.Source != MetadataSources.AniList)
-                        .Select(r => (r.Locale, r.Field))
-                        .ToHashSet();
-                    var rows = ToAniListFields(itemId, translations, enabled)
-                        .Where(r => !held.Contains((r.Locale, r.Field)))
-                        .ToList();
-                    await _store
-                        .ReplaceProviderFieldsAsync(itemId, MetadataSources.AniList, rows, cancellationToken)
-                        .ConfigureAwait(false);
-                    fetched = true;
-                }
-                else
-                {
-                    notes.Add("AniList has no such title (404)");
-                }
+                var genres = rules[MetadataCategories.Genres].Contains(MetadataSources.Tmdb, StringComparer.Ordinal)
+                    ? await TmdbGenreFieldsAsync(item, tmdb, enabled, original, cancellationToken).ConfigureAwait(false)
+                    : [];
+                rows[MetadataSources.Tmdb] = (
+                    ToFields(item.Id, tmdb.Translations, enabled, original)
+                        .Concat(genres)
+                        .Concat(BaseTerms(item.Id, MetadataFields.Tags, tmdb.Keywords, MetadataSources.Tmdb))
+                        .ToList(),
+                    ToImages(item.Id, tmdb.Images, enabled, original));
             }
             catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
             {
-                errors.Add("AniList: " + ex.Message);
+                outcomes[MetadataSources.Tmdb] = Outcome.Failed(ex.Message);
+                errors.Add(ex.Message);
             }
         }
+
+        if (tvdb is not null)
+        {
+            rows[MetadataSources.Tvdb] = (
+                ToTvdbFields(item.Id, tvdb.Translations, enabled, original)
+                    .Concat(BaseTerms(item.Id, MetadataFields.Genres, tvdb.Genres, MetadataSources.Tvdb))
+                    .Concat(BaseTerms(item.Id, MetadataFields.Tags, tvdb.Tags, MetadataSources.Tvdb))
+                    .ToList(),
+                ToTvdbImages(item.Id, tvdb.Images, enabled, original));
+        }
+
+        if (aniList is not null)
+        {
+            rows[MetadataSources.AniList] = (ToAniListFields(item.Id, aniList, enabled, original), []);
+        }
+
+        await StoreAsync(itemId, rules, outcomes, rows, cancellationToken).ConfigureAwait(false);
+        var fetched = rows.Count > 0;
 
         if (errors.Count > 0)
         {
             var error = string.Join("; ", errors);
             FetchLog.ProviderFailed(_logger, item.Name, itemId, error);
-            await SetStateAsync(item, snapshot, FetchStatus.Error, error, cancellationToken).ConfigureAwait(false);
+            await SetStateAsync(item, snapshot, FetchStatus.Error, error, original, cancellationToken).ConfigureAwait(false);
             return FetchResult.Failed;
         }
 
         if (!fetched)
         {
-            await SetStateAsync(item, snapshot, FetchStatus.Skipped, string.Join("; ", notes), cancellationToken).ConfigureAwait(false);
+            await SetStateAsync(item, snapshot, FetchStatus.Skipped, string.Join("; ", notes), original, cancellationToken)
+                .ConfigureAwait(false);
             return FetchResult.Skipped;
         }
 
-        await SetStateAsync(item, snapshot, FetchStatus.Ok, null, cancellationToken).ConfigureAwait(false);
+        await SetStateAsync(item, snapshot, FetchStatus.Ok, null, original, cancellationToken).ConfigureAwait(false);
         return FetchResult.Fetched;
     }
 
@@ -219,6 +245,37 @@ public sealed class MetadataFetcher
     }
 
     /// <summary>
+    /// Merges every provider's rows category by category: for each category, the providers in
+    /// that category's order, each filling the (locale, key) pairs the ones before it lack.
+    /// </summary>
+    internal static (IReadOnlyList<LocalizedField> Fields, IReadOnlyList<LocalizedImage> Images) MergeByCategory(
+        IReadOnlyDictionary<string, IReadOnlyList<string>> rules,
+        IReadOnlyDictionary<string, (IReadOnlyList<LocalizedField> Fields, IReadOnlyList<LocalizedImage> Images)> rowsBySource)
+    {
+        var fields = new List<LocalizedField>();
+        var images = new List<LocalizedImage>();
+        foreach (var (category, order) in rules)
+        {
+            var sources = order.Where(rowsBySource.ContainsKey).ToList();
+            if (category.StartsWith(MetadataCategories.ImagePrefix, StringComparison.Ordinal))
+            {
+                var type = category[MetadataCategories.ImagePrefix.Length..];
+                images.AddRange(Merge(
+                    sources.Select(s => (IReadOnlyList<LocalizedImage>)rowsBySource[s].Images.Where(i => i.ImageType == type).ToList()),
+                    i => i.Locale));
+            }
+            else
+            {
+                fields.AddRange(Merge(
+                    sources.Select(s => (IReadOnlyList<LocalizedField>)rowsBySource[s].Fields.Where(f => f.Field == category).ToList()),
+                    f => f.Locale));
+            }
+        }
+
+        return (fields, images);
+    }
+
+    /// <summary>
     /// Turns TVDB's text into field rows. TVDB has one translation per language (<c>es</c>), where
     /// TMDB has one per country (<c>es-MX</c>, <c>es-ES</c>), so a bare-language value is stored
     /// under every enabled locale of that language (see <see cref="Spread"/>): that is what lets
@@ -227,7 +284,8 @@ public sealed class MetadataFetcher
     internal static IReadOnlyList<LocalizedField> ToTvdbFields(
         Guid itemId,
         IReadOnlyList<TvdbTranslation> translations,
-        IReadOnlyCollection<string> enabledLocales)
+        IReadOnlyCollection<string> enabledLocales,
+        string? originalLanguage = null)
     {
         var values = translations
             .SelectMany(t => new[]
@@ -238,7 +296,7 @@ public sealed class MetadataFetcher
             })
             .Where(v => v.Value is not null)
             .Select(v => (v.Locale, v.Key, Value: v.Value!));
-        return Spread(values, enabledLocales)
+        return Spread(values, enabledLocales, originalLanguage)
             .Select(v => new LocalizedField(itemId, v.Locale, v.Key, v.Value, MetadataSources.Tvdb))
             .ToList();
     }
@@ -247,10 +305,11 @@ public sealed class MetadataFetcher
     internal static IReadOnlyList<LocalizedImage> ToTvdbImages(
         Guid itemId,
         IReadOnlyList<TvdbImage> images,
-        IReadOnlyCollection<string> enabledLocales)
+        IReadOnlyCollection<string> enabledLocales,
+        string? originalLanguage = null)
     {
         var byKey = images.ToDictionary(i => (i.Locale, i.ImageType));
-        return Spread(images.Select(i => (i.Locale, Key: i.ImageType, Value: i.Url)), enabledLocales)
+        return Spread(images.Select(i => (i.Locale, Key: i.ImageType, Value: i.Url)), enabledLocales, originalLanguage)
             .Select(v =>
             {
                 var image = byKey[(v.Source, v.Key)];
@@ -264,13 +323,14 @@ public sealed class MetadataFetcher
     /// bare-language value (<c>es</c>) also goes to every enabled locale of the same language and
     /// fallback group (<c>es-MX</c>, <c>es-ES</c>) that has no value of its own for that key; if
     /// there is none, it stays on the bare language, where fallback finds it. Values outside the
-    /// enabled locales' fallback groups are dropped.
+    /// enabled locales' fallback groups (and the original language's) are dropped.
     /// </summary>
     internal static IEnumerable<(string Locale, string Key, string Value, string Source)> Spread(
         IEnumerable<(string Locale, string Key, string Value)> values,
-        IReadOnlyCollection<string> enabledLocales)
+        IReadOnlyCollection<string> enabledLocales,
+        string? originalLanguage = null)
     {
-        var groups = Groups(enabledLocales);
+        var groups = Groups(enabledLocales, originalLanguage);
         var enabled = enabledLocales
             .Select(l => LocaleChain.TryNormalize(l, out var n) ? n : null)
             .OfType<string>()
@@ -303,20 +363,29 @@ public sealed class MetadataFetcher
     }
 
     /// <summary>
-    /// Turns AniList's text into field rows, keeping the enabled locales' fallback groups, plus
-    /// romanized titles (<c>ja-Latn</c>, …) whether enabled or not: people type an anime's romaji
-    /// name into search whatever language they read. Romanized locales are a fallback group of
-    /// their own, so storing them never changes what another locale is served.
+    /// Turns AniList's text into field rows, keeping the enabled locales' fallback groups (and the
+    /// original language's), plus romanized titles (<c>ja-Latn</c>, …) whether enabled or not:
+    /// people type an anime's romaji name into search whatever language they read. Romanized
+    /// locales are a fallback group of their own, so storing them never changes what another
+    /// locale is served. Genres and tags (English) become base terms.
     /// </summary>
     internal static IReadOnlyList<LocalizedField> ToAniListFields(
         Guid itemId,
         IReadOnlyList<AniListTranslation> translations,
-        IReadOnlyCollection<string> enabledLocales)
+        IReadOnlyCollection<string> enabledLocales,
+        string? originalLanguage = null)
     {
-        var groups = Groups(enabledLocales);
+        var groups = Groups(enabledLocales, originalLanguage);
         var rows = new List<LocalizedField>();
-        foreach (var t in translations.Where(t => groups.Contains(LocaleChain.FallbackGroup(t.Locale)) || IsRomanized(t.Locale)))
+        foreach (var t in translations)
         {
+            rows.AddRange(BaseTerms(itemId, MetadataFields.Genres, t.Genres, MetadataSources.AniList));
+            rows.AddRange(BaseTerms(itemId, MetadataFields.Tags, t.Tags, MetadataSources.AniList));
+            if (!groups.Contains(LocaleChain.FallbackGroup(t.Locale)) && !IsRomanized(t.Locale))
+            {
+                continue;
+            }
+
             if (t.Title is not null)
             {
                 rows.Add(new LocalizedField(itemId, t.Locale, MetadataFields.Name, t.Title, MetadataSources.AniList));
@@ -331,26 +400,28 @@ public sealed class MetadataFetcher
         return rows;
     }
 
-    /// <summary>Turns images into rows, keeping the enabled locales' fallback groups.</summary>
+    /// <summary>Turns images into rows, keeping the enabled locales' fallback groups (and the original language's).</summary>
     internal static IReadOnlyList<LocalizedImage> ToImages(
         Guid itemId,
         IReadOnlyList<TmdbImage> images,
-        IReadOnlyCollection<string> enabledLocales)
+        IReadOnlyCollection<string> enabledLocales,
+        string? originalLanguage = null)
     {
-        var groups = Groups(enabledLocales);
+        var groups = Groups(enabledLocales, originalLanguage);
         return images
             .Where(i => groups.Contains(LocaleChain.FallbackGroup(i.Locale)))
             .Select(i => new LocalizedImage(itemId, i.Locale, i.ImageType, i.Url, MetadataSources.Tmdb, Width: i.Width, Height: i.Height))
             .ToList();
     }
 
-    /// <summary>Turns translations into field rows, keeping the enabled locales' fallback groups.</summary>
+    /// <summary>Turns translations into field rows, keeping the enabled locales' fallback groups (and the original language's).</summary>
     internal static IReadOnlyList<LocalizedField> ToFields(
         Guid itemId,
         IReadOnlyList<TmdbTranslation> translations,
-        IReadOnlyCollection<string> enabledLocales)
+        IReadOnlyCollection<string> enabledLocales,
+        string? originalLanguage = null)
     {
-        var groups = Groups(enabledLocales);
+        var groups = Groups(enabledLocales, originalLanguage);
 
         var rows = new List<LocalizedField>();
         foreach (var t in translations)
@@ -377,22 +448,48 @@ public sealed class MetadataFetcher
     }
 
     /// <summary>
+    /// The locales TMDB's genre names are asked in: the enabled ones, and the original language
+    /// when no enabled locale shares its fallback group.
+    /// </summary>
+    internal static IReadOnlyList<string> GenreLocales(IReadOnlyCollection<string> enabledLocales, string? originalLanguage)
+    {
+        var locales = enabledLocales
+            .Select(l => LocaleChain.TryNormalize(l, out var n) ? n : null)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (LocaleChain.TryNormalize(originalLanguage, out var original)
+            && !locales.Any(l => LocaleChain.FallbackGroup(l) == LocaleChain.FallbackGroup(original)))
+        {
+            locales.Add(original);
+        }
+
+        return locales;
+    }
+
+    /// <summary>
     /// The snapshot stored with the fetch state: the item's ids, plus the provider choice when it
     /// isn't the default, so that changing providers or their order re-fetches the item.
     /// </summary>
     internal static IReadOnlyDictionary<string, string> Snapshot(
         LibraryItemInfo item,
         PluginConfiguration config,
-        IReadOnlyList<string> order)
+        IReadOnlyList<string> usable)
     {
-        var snapshot = item.FetchSnapshot(includeTvdb: order.Contains(MetadataSources.Tvdb, StringComparer.Ordinal));
-        if (ProviderPriority.Fingerprint(config) is not { } fingerprint)
+        var snapshot = item.FetchSnapshot(includeTvdb: usable.Contains(MetadataSources.Tvdb, StringComparer.Ordinal));
+        if (SourceRules.Fingerprint(config) is not { } fingerprint)
         {
             return snapshot;
         }
 
         return new Dictionary<string, string>(snapshot, StringComparer.Ordinal) { [ProvidersSnapshotKey] = fingerprint };
     }
+
+    /// <summary>A list of English terms as one base-terms row (<see cref="BaseTermsLocale"/>), or none.</summary>
+    private static IEnumerable<LocalizedField> BaseTerms(Guid itemId, string field, IReadOnlyList<string>? terms, string source) =>
+        ListValues.Serialize(terms ?? []) is { } json
+            ? [new LocalizedField(itemId, BaseTermsLocale, field, json, source)]
+            : [];
 
     /// <summary>Whether a locale is a romanization with a fallback group of its own (<c>ja-Latn</c>).</summary>
     private static bool IsRomanized(string locale) =>
@@ -410,11 +507,19 @@ public sealed class MetadataFetcher
             ? id
             : null;
 
-    private static HashSet<string> Groups(IReadOnlyCollection<string> enabledLocales) =>
-        enabledLocales
+    private static HashSet<string> Groups(IReadOnlyCollection<string> enabledLocales, string? originalLanguage = null)
+    {
+        var groups = enabledLocales
             .Select(l => LocaleChain.TryNormalize(l, out var n) ? LocaleChain.FallbackGroup(n) : null)
             .OfType<string>()
             .ToHashSet(StringComparer.Ordinal);
+        if (LocaleChain.TryNormalize(originalLanguage, out var original))
+        {
+            groups.Add(LocaleChain.FallbackGroup(original));
+        }
+
+        return groups;
+    }
 
     private static bool SameIds(IReadOnlyDictionary<string, string> stored, IReadOnlyDictionary<string, string> current) =>
         SqliteLocalizedMetadataStore.SerializeProviderIds(stored) == SqliteLocalizedMetadataStore.SerializeProviderIds(current);
@@ -435,51 +540,97 @@ public sealed class MetadataFetcher
             : null;
 
     /// <summary>
-    /// Writes the merge of the main providers: for each key, the value of the first provider in
-    /// priority order that has one. A provider that failed this time keeps the unlocked rows it
-    /// had, so a TVDB outage doesn't hand its fields to TMDB until the retry; a provider that
-    /// was turned off, found nothing or no longer applies loses its rows.
+    /// Writes the per-category merge of every provider. A provider that failed this time keeps
+    /// the unlocked rows it had, so a TVDB outage doesn't hand its fields to TMDB until the retry;
+    /// a provider that is no longer listed or set up, found nothing or no longer applies loses
+    /// its rows.
     /// </summary>
-    private async Task StoreMainAsync(
+    private async Task StoreAsync(
         Guid itemId,
-        IReadOnlyList<(string Source, Outcome Outcome)> outcomes,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> rules,
+        IReadOnlyDictionary<string, Outcome> outcomes,
+        Dictionary<string, (IReadOnlyList<LocalizedField> Fields, IReadOnlyList<LocalizedImage> Images)> rows,
         CancellationToken cancellationToken)
     {
+        var failed = outcomes.Where(o => o.Value.Error is not null).Select(o => o.Key).ToList();
         IReadOnlyList<LocalizedField> storedFields = [];
-        IReadOnlyList<LocalizedImage> storedImages = [];
-        if (outcomes.Any(o => o.Outcome.Error is not null))
+        if (failed.Count > 0 || rows.ContainsKey(MetadataSources.AniList))
         {
             storedFields = await _store.GetFieldsAsync([itemId], null, cancellationToken).ConfigureAwait(false);
-            storedImages = await _store.GetImagesAsync([itemId], null, cancellationToken).ConfigureAwait(false);
         }
 
-        var fields = Merge(
-            outcomes.Select(o => o.Outcome.Fields
-                                 ?? (o.Outcome.Error is not null
-                                     ? storedFields.Where(r => r.Source == o.Source && !r.Locked).ToList()
-                                     : [])),
-            r => (r.Locale, r.Field));
-        var images = Merge(
-            outcomes.Select(o => o.Outcome.Images
-                                 ?? (o.Outcome.Error is not null
-                                     ? storedImages.Where(r => r.Source == o.Source && !r.Locked).ToList()
-                                     : [])),
-            r => (r.Locale, r.ImageType));
+        if (failed.Count > 0)
+        {
+            var storedImages = await _store.GetImagesAsync([itemId], null, cancellationToken).ConfigureAwait(false);
+            foreach (var source in failed)
+            {
+                rows[source] = (
+                    storedFields.Where(r => r.Source == source && !r.Locked).ToList(),
+                    storedImages.Where(r => r.Source == source && !r.Locked && !r.HasFile).ToList());
+            }
+        }
+
+        var (fields, images) = MergeByCategory(rules, rows);
+
+        // AniList only ever fills: it never replaces an admin's value, even an unlocked one.
+        var manual = storedFields
+            .Where(r => r.Source == MetadataSources.Manual)
+            .Select(r => (r.Locale, r.Field))
+            .ToHashSet();
+        fields = fields.Where(f => f.Source != MetadataSources.AniList || !manual.Contains((f.Locale, f.Field))).ToList();
         await _store
-            .ReplaceProvidersAsync(itemId, ProviderPriority.MainSources, fields, images, cancellationToken)
+            .ReplaceProvidersAsync(itemId, SourceRules.AllSources, fields, images, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private async Task<Outcome> FetchTmdbAsync(LibraryItemInfo item, IReadOnlyCollection<string> enabled, CancellationToken cancellationToken)
+    /// <summary>
+    /// TMDB's genres of a movie or series in each enabled locale (and the original language),
+    /// from its per-language genre lists, plus the English names as base terms.
+    /// </summary>
+    private async Task<IReadOnlyList<LocalizedField>> TmdbGenreFieldsAsync(
+        LibraryItemInfo item,
+        TmdbTitle title,
+        IReadOnlyCollection<string> enabled,
+        string? original,
+        CancellationToken cancellationToken)
     {
+        if (title.Genres is not { Count: > 0 } genres || item.Kind is not (ItemKind.Movie or ItemKind.Series))
+        {
+            return [];
+        }
+
+        var rows = BaseTerms(item.Id, MetadataFields.Genres, genres.Select(g => g.Name).ToList(), MetadataSources.Tmdb).ToList();
+        foreach (var locale in GenreLocales(enabled, original))
+        {
+            var names = await _tmdb.GetGenreNamesAsync(item.Kind == ItemKind.Series, locale, cancellationToken).ConfigureAwait(false);
+            var localized = genres.Select(g => names.GetValueOrDefault(g.Id)).ToList();
+            if (localized.Any(n => n is null))
+            {
+                // A genre TMDB doesn't name in this locale: leave the locale to fallback rather
+                // than serve a partial list.
+                continue;
+            }
+
+            if (ListValues.Serialize(localized) is { } json)
+            {
+                rows.Add(new LocalizedField(item.Id, locale, MetadataFields.Genres, json, MetadataSources.Tmdb));
+            }
+        }
+
+        return rows;
+    }
+
+    private async Task<(Outcome Outcome, TmdbTitle? Title)> FetchTmdbAsync(LibraryItemInfo item, CancellationToken cancellationToken)
+    {
+        IReadOnlyCollection<string>? extra = item.OriginalLanguage is { } language ? [language] : null;
         Func<CancellationToken, Task<TmdbTitle?>>? call = item.Kind switch
         {
             ItemKind.Movie when PositiveId(item.ProviderIds, ProviderNames.Tmdb) is { } movie =>
-                ct => _tmdb.GetMovieAsync(movie, ct),
+                ct => _tmdb.GetMovieAsync(movie, ct, extra),
             ItemKind.Series when PositiveId(item.ProviderIds, ProviderNames.Tmdb) is { } series =>
-                ct => _tmdb.GetSeriesAsync(series, ct),
+                ct => _tmdb.GetSeriesAsync(series, ct, extra),
             ItemKind.Season when PositiveId(item.SeriesProviderIds, ProviderNames.Tmdb) is { } series && item.SeasonNumber is { } season =>
-                ct => _tmdb.GetSeasonAsync(series, season, ct),
+                ct => _tmdb.GetSeasonAsync(series, season, ct, extra),
             ItemKind.Episode when PositiveId(item.SeriesProviderIds, ProviderNames.Tmdb) is { } series
                                   && item.SeasonNumber is { } season
                                   && item.EpisodeNumber is { } episode =>
@@ -488,20 +639,20 @@ public sealed class MetadataFetcher
         };
         if (call is null)
         {
-            return Outcome.Skip(item.Kind is ItemKind.Season or ItemKind.Episode
+            return (Outcome.Skip(item.Kind is ItemKind.Season or ItemKind.Episode
                 ? "No TMDB id on the series, or no season/episode number"
-                : "No TMDB id");
+                : "No TMDB id"), null);
         }
 
         try
         {
             return await call(cancellationToken).ConfigureAwait(false) is { } title
-                ? Outcome.Rows(ToFields(item.Id, title.Translations, enabled), ToImages(item.Id, title.Images, enabled))
-                : Outcome.Skip("TMDB has no such title (404)");
+                ? (Outcome.Found, title)
+                : (Outcome.Skip("TMDB has no such title (404)"), null);
         }
         catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
-            return Outcome.Failed(ex.Message);
+            return (Outcome.Failed(ex.Message), null);
         }
     }
 
@@ -509,7 +660,7 @@ public sealed class MetadataFetcher
     /// TVDB by the item's own TVDB id; else movies and series by their IMDb id, and seasons and
     /// episodes by the series' TVDB id and their numbers (one lookup request more).
     /// </summary>
-    private async Task<Outcome> FetchTvdbAsync(LibraryItemInfo item, IReadOnlyCollection<string> enabled, CancellationToken cancellationToken)
+    private async Task<(Outcome Outcome, TvdbTitle? Title)> FetchTvdbAsync(LibraryItemInfo item, CancellationToken cancellationToken)
     {
         var own = PositiveId(item.ProviderIds, ProviderNames.Tvdb);
         var series = PositiveId(item.SeriesProviderIds, ProviderNames.Tvdb);
@@ -523,9 +674,9 @@ public sealed class MetadataFetcher
         };
         if (!applies)
         {
-            return Outcome.Skip(item.Kind is ItemKind.Season or ItemKind.Episode
+            return (Outcome.Skip(item.Kind is ItemKind.Season or ItemKind.Episode
                 ? "No TVDB id on the item or its series, or no season/episode number"
-                : "No TVDB or IMDb id");
+                : "No TVDB or IMDb id"), null);
         }
 
         try
@@ -542,12 +693,35 @@ public sealed class MetadataFetcher
                 };
             var title = await call.ConfigureAwait(false);
             return title is null
-                ? Outcome.Skip("TVDB has no such title (404)")
-                : Outcome.Rows(ToTvdbFields(item.Id, title.Translations, enabled), ToTvdbImages(item.Id, title.Images, enabled));
+                ? (Outcome.Skip("TVDB has no such title (404)"), null)
+                : (Outcome.Found, title);
         }
         catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
-            return Outcome.Failed(ex.Message.StartsWith("TVDB", StringComparison.Ordinal) ? ex.Message : "TVDB: " + ex.Message);
+            return (Outcome.Failed(ex.Message.StartsWith("TVDB", StringComparison.Ordinal) ? ex.Message : "TVDB: " + ex.Message), null);
+        }
+    }
+
+    /// <summary>AniList by the item's AniList id (movies and series only).</summary>
+    private async Task<(Outcome Outcome, IReadOnlyList<AniListTranslation>? Translations)> FetchAniListAsync(
+        LibraryItemInfo item,
+        CancellationToken cancellationToken)
+    {
+        if (AniListId(item) is not { } id)
+        {
+            // Only anime have one: not worth a note on every other item.
+            return (Outcome.Found, null);
+        }
+
+        try
+        {
+            return await _aniList.GetMediaAsync(id, cancellationToken).ConfigureAwait(false) is { } translations
+                ? (Outcome.Found, translations)
+                : (Outcome.Skip("AniList has no such title (404)"), null);
+        }
+        catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
+        {
+            return (Outcome.Failed("AniList: " + ex.Message), null);
         }
     }
 
@@ -566,23 +740,19 @@ public sealed class MetadataFetcher
         IReadOnlyDictionary<string, string> snapshot,
         FetchStatus status,
         string? error,
+        string? originalLanguage,
         CancellationToken cancellationToken) =>
         _store.SetFetchStateAsync(
-            new FetchState(item.Id, snapshot, _time.GetUtcNow(), status, error, FetchVersion, item.Kind),
+            new FetchState(item.Id, snapshot, _time.GetUtcNow(), status, error, FetchVersion, item.Kind, originalLanguage),
             cancellationToken);
 
-    /// <summary>What one main provider gave: rows (fetched), a note (nothing to fetch), or an error.</summary>
-    private sealed record Outcome(
-        IReadOnlyList<LocalizedField>? Fields,
-        IReadOnlyList<LocalizedImage>? Images,
-        string? Note,
-        string? Error)
+    /// <summary>What one provider gave: a title or nothing to say (found), a note (nothing to fetch), or an error.</summary>
+    private sealed record Outcome(string? Note, string? Error)
     {
-        public static Outcome Rows(IReadOnlyList<LocalizedField> fields, IReadOnlyList<LocalizedImage> images) =>
-            new(fields, images, null, null);
+        public static Outcome Found { get; } = new(null, null);
 
-        public static Outcome Skip(string note) => new(null, null, note, null);
+        public static Outcome Skip(string note) => new(note, null);
 
-        public static Outcome Failed(string error) => new(null, null, null, error);
+        public static Outcome Failed(string error) => new(null, error);
     }
 }

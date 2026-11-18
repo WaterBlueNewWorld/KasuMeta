@@ -1,0 +1,29 @@
+{
+  "Kind": "genre",
+  "Locale": "es-MX",
+  "Terms": [
+    {
+      "Term": "Sci-Fi & Fantasy",
+      "Items": 4
+    },
+    {
+      "Term": "Mahou Shoujo",
+      "Items": 2
+    },
+    {
+      "Term": "Action",
+      "Translation": "Acción",
+      "Items": 9
+    },
+    {
+      "Term": "Drama",
+      "Translation": "Drama",
+      "Items": 7
+    },
+    {
+      "Term": "Horror",
+      "Translation": "Terror",
+      "Items": 0
+    }
+  ]
+}

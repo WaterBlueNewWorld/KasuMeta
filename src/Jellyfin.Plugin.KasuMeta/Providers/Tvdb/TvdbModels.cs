@@ -28,7 +28,15 @@ public sealed record TvdbImage(string Locale, string ImageType, string Url, int 
 /// <summary>Everything one TVDB record gives KasuMeta.</summary>
 /// <param name="Translations">Every language's text.</param>
 /// <param name="Images">The best artwork per locale and type (empty for episodes).</param>
-public sealed record TvdbTitle(IReadOnlyList<TvdbTranslation> Translations, IReadOnlyList<TvdbImage> Images);
+/// <param name="OriginalLanguage">The record's original language as BCP-47 (<c>ja</c>); movies and series only.</param>
+/// <param name="Genres">The record's genres (TVDB names them in English); movies and series only.</param>
+/// <param name="Tags">The record's tags (English); movies and series only.</param>
+public sealed record TvdbTitle(
+    IReadOnlyList<TvdbTranslation> Translations,
+    IReadOnlyList<TvdbImage> Images,
+    string? OriginalLanguage = null,
+    IReadOnlyList<string>? Genres = null,
+    IReadOnlyList<string>? Tags = null);
 
 /// <summary>TVDB's envelope: <c>{"status": "success", "data": …}</c>.</summary>
 /// <typeparam name="T">The data's type.</typeparam>
@@ -84,6 +92,21 @@ internal sealed class TvdbRecord
     /// <summary>Gets or sets the id of the series' default season type (episode order).</summary>
     [JsonPropertyName("defaultSeasonType")]
     public int? DefaultSeasonType { get; set; }
+
+    /// <summary>Gets or sets the genres (movies and series), named in English.</summary>
+    [JsonPropertyName("genres")]
+    public List<TvdbNamed>? Genres { get; set; }
+
+    /// <summary>Gets or sets the tag options (movies and series), named in English.</summary>
+    [JsonPropertyName("tags")]
+    public List<TvdbNamed>? Tags { get; set; }
+}
+
+/// <summary>A genre or tag option: only its name is read.</summary>
+internal sealed class TvdbNamed
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
 }
 
 internal sealed class TvdbTranslations

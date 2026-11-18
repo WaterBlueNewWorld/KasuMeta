@@ -31,6 +31,12 @@ public sealed record LibraryItemInfo(
     public string? Name { get; init; }
 
     /// <summary>
+    /// Gets the item's original language as Jellyfin knows it (for seasons and episodes, their
+    /// series'), normalized BCP-47 (<c>ja</c>); null if unknown. Providers may name it too.
+    /// </summary>
+    public string? OriginalLanguage { get; init; }
+
+    /// <summary>
     /// Gets the inputs a fetch depends on, as saved in <c>fetch_state</c>: the item's provider ids,
     /// plus for seasons and episodes the series' TMDB id (and TVDB id, when TVDB is used) and the
     /// numbers. When this changes, the stored translations may belong to another title and must
