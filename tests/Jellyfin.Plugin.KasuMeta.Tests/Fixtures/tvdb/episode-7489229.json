@@ -1,0 +1,121 @@
+{
+ "status": "success",
+ "data": {
+  "id": 7489229,
+  "seriesId": 370931,
+  "name": "やぁやぁ、知ってる？魔法少女のその噂",
+  "seasonNumber": 1,
+  "number": 1,
+  "nameTranslations": [
+   "jpn",
+   "eng",
+   "fra",
+   "ita",
+   "por",
+   "ara",
+   "spa",
+   "zho",
+   "kor",
+   "deu",
+   "rus"
+  ],
+  "overviewTranslations": [
+   "jpn",
+   "eng",
+   "fra",
+   "por",
+   "spa",
+   "zho",
+   "kor",
+   "deu",
+   "rus"
+  ],
+  "translations": {
+   "nameTranslations": [
+    {
+     "name": "やぁやぁ、知ってる？魔法少女のその噂",
+     "language": "jpn"
+    },
+    {
+     "name": "Have You Heard? That Rumor About the Magical Girls",
+     "language": "eng"
+    },
+    {
+     "name": "Avez-vous entendu la rumeur sur les Puella Magi ?",
+     "language": "fra"
+    },
+    {
+     "name": "Ehi, hai sentito la voce che gira sulle maghe?",
+     "language": "ita"
+    },
+    {
+     "name": "Ei, Ei, Você Soube? Aquele Rumor Sobre as Garotas Mágicas",
+     "language": "por"
+    },
+    {
+     "name": "أسمعت إشاعة الفتيات الساحرات؟",
+     "language": "ara"
+    },
+    {
+     "name": "¿Lo has escuchado?  Ese rumor sobre las Chicas Mágicas",
+     "language": "spa"
+    },
+    {
+     "name": "哎呀，听说过吗？魔法少女的那个传闻",
+     "language": "zho"
+    },
+    {
+     "name": "얘, 얘, 그거 아니? 마법소녀의 그 소문",
+     "language": "kor"
+    },
+    {
+     "name": "Hast du gehört? Dieses Gerücht über die magischen Mädchen",
+     "language": "deu"
+    },
+    {
+     "name": "Привет-привет, ты знаешь? Слухи о магических девушках",
+     "language": "rus"
+    }
+   ],
+   "overviewTranslations": [
+    {
+     "overview": "宝崎市の中学生、環いろはは、魔法少女として魔女と戦う日々を過ごしている。\r\nしかしいろはは、魔法少女になった時の自分の願い事がなんだったのかを忘れてしまっていた。\r\nある日、いろはは、交流のある魔法少女の黒江から『神浜に行けば、魔法少女は救われる』という噂を聞く。\r\n遭遇した魔女との戦いのなか、思いがけず神浜へとやってきたいろはだが……。",
+     "language": "jpn"
+    },
+    {
+     "overview": "Iroha Tamaki, a Student in Takarazaki City, has been battling Witches as a Magical Girl. However, Iroha can't seem to remember the wish she made when she became a Magical Girl. One day, she hears a rumor from another Magical Girl, Kuroe, that Magical Girls can be saved if they go to Kamihama City. During a battle with a Witch, Iroha unexpectedly finds herself in Kamihama but…",
+     "language": "eng"
+    },
+    {
+     "overview": "Iroha Tamaki se bat en tant que Puella Magi, mais a oublié le voeu pour lequel elle a accepté cette vie de combats contre les sorcières. C'est alors qu'elle découvre une rumeur promettant le salut aux Puella Magi si elles se rendent à Kamihama.",
+     "language": "fra"
+    },
+    {
+     "overview": "Há um boato entre as Garotas Mágicas de que, se forem à cidade de Kamihama, as Garotas Mágicas serão salvas. Iroha acha isso um pouco suspeito, mas sua parceira, Kuroe, diz a Iroha que ela teve um sonho sobre esse boato. Então Iroha e Kuroe tentam ir à cidade de Kamihama.",
+     "language": "por"
+    },
+    {
+     "overview": "Hay un rumor entre las Chicas Mágicas de que si van a la ciudad de Kamihama, las Chicas Mágicas se salvarán. Iroha piensa que es un poco sospechoso, pero su pareja, Kuroe, le dice a Iroha que ha tenido un sueño con respecto a ese rumor. Entonces Iroha y Kuroe intentan ir a la ciudad de Kamihama.",
+     "language": "spa"
+    },
+    {
+     "overview": "作为魔法少女，来自宝崎市的初中生环彩羽过着与魔女战斗的日子。但是，彩羽忘记了她成为魔法女孩时的愿望。有一天，彩羽从保持着联系的黑江那里听到了“去到神滨，魔法少女就可以得救”的传闻。在与遭遇的魔女战斗时，彩羽意外地来到了神滨……",
+     "language": "zho"
+    },
+    {
+     "overview": "타카라자키시의 중학생 타마키 이로하는 마법소녀로서 마녀와 싸우는 나날을 보내고 있다. 하지만 이로하는 마법소녀가 됐을 때 빌었던 자신의 소원이 무엇이었는지 잊어버렸다. 어느 날 이로하는 친분이 있던 마법소녀 쿠로에로부터 '카미하마시에 가면 마법소녀는 구원받는다'라는 소문을 듣게 된다. 마녀와 전투 중 뜻밖에 카미하마시로 오게 된 이로하였는데.",
+     "language": "kor"
+    },
+    {
+     "overview": "Es gibt ein Gerücht unter Magical Girls, dass Magical Girls gerettet werden, wenn sie nach Kamihama City gehen. Iroha findet das etwas verdächtig, aber ihre Partnerin Kuroe erzählt Iroha, dass sie von diesem Gerücht geträumt hat. Also versuchen Iroha und Kuroe, nach Kamihama City zu fahren.",
+     "language": "deu"
+    },
+    {
+     "overview": "Среднешкольница из города Хоразаки, Ироха Тамаки, проводит дни, сражаясь с ведьмами в роли магической девушки. Однако Ироха забыла, какое желание она загадала, когда стала магической девушкой. Однажды Ироха слышит от своей знакомой магической девушки Куроэ слух о том, что 'если поехать в Камихаму, магические девушки будут спасены'. Встретившись с ведьмой в бою, Ироха неожиданно оказывается в Камихаме...",
+     "language": "rus"
+    }
+   ],
+   "aliases": null
+  }
+ }
+}

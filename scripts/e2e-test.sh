@@ -6,6 +6,8 @@
 #   bash scripts/e2e-test.sh
 #
 # Temporarily restricts the test user to the Movies library (visibility check) and restores it.
+# With a TVDB key on the plugin page, also switches the providers to "TVDB over TMDB" for a moment
+# (the library is fetched again, twice) and puts the saved configuration back.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -204,6 +206,40 @@ body="$(curl -sS -H "$A" "$base/KasuMeta/Status")"
   && pass "status: TMDB key set, search index on, item counts add up" || fail "status: $body"
 [[ "$(json "d['Providers']['tmdb']['Requests'] > 0" <<<"$body")" == "True" ]] \
   && pass "status counts TMDB requests (the refresh above sent some)" || fail "provider counters: $body"
+
+echo "Providers"
+plugin_config="$base/Plugins/703b8e8e-7d16-40bd-8f92-87fad8b741ae/Configuration"
+saved_config="$(curl -sS -H "$A" "$plugin_config")"
+put_config() { curl -sS --fail-with-body -o /dev/null -X POST -H "$A" -H 'Content-Type: application/json' --data "$1" "$plugin_config"; }
+# wait_cabin EXPR: like wait_all, for up to 90 s, since a provider change re-fetches the library.
+wait_cabin() {
+  local i
+  for i in $(seq 1 180); do
+    [[ "$(all | json "$1")" == "True" ]] && return 0
+    sleep 0.5
+  done
+  return 1
+}
+if [[ "$(json "bool(d['TvdbApiKey']) and d['TmdbEnabled'] and not d['TvdbEnabled']" <<<"$saved_config")" != "True" ]]; then
+  echo "  skip TVDB checks: set a TVDB key and leave the providers on \"TMDB only\" to run them"
+else
+  trap 'put_config "$saved_config"' EXIT
+  put_config "$(json "json.dumps({**d, 'TvdbEnabled': True, 'TmdbWeight': 40, 'TvdbWeight': 80})" <<<"$saved_config")"
+  wait_cabin "d['Locales']['es-MX'].get('Name', {}).get('Source') == 'tvdb'" \
+    && pass "with TVDB weighted over TMDB, the library is fetched again and TVDB's title wins" || fail "TVDB never won"
+  body="$(all)"
+  [[ "$(json "d['Locales']['es-MX']['Name']['Value'] == 'La cabaña en el bosque' and d['Locales']['es-ES']['Name']['Value'] == 'La cabaña en el bosque'" <<<"$body")" == "True" ]] \
+    && pass "TVDB's one Spanish title is stored for es-MX and es-ES (found by IMDb id: Cabin has no TVDB id)" || fail "tvdb spanish: $body"
+  [[ "$(json "d['Locales']['ja-JP']['Tagline']['Source'] == 'tmdb'" <<<"$body")" == "True" ]] \
+    && pass "TMDB fills what TVDB lacks (the Japanese tagline)" || fail "tmdb fill: $body"
+  body="$(curl -sS -H "$A" "$base/KasuMeta/Status")"
+  [[ "$(json "d['MetadataProviders'] == ['tvdb', 'tmdb'] and d['TvdbConfigured'] and d['Providers']['tvdb']['Requests'] > 0" <<<"$body")" == "True" ]] \
+    && pass "status lists TVDB first and counts its requests" || fail "status: $body"
+  put_config "$saved_config"
+  trap - EXIT
+  wait_cabin "d['Locales']['es-MX'].get('Name', {}).get('Source') == 'tmdb' and 'tvdb' not in str(d)" \
+    && pass "back on TMDB only, TMDB's titles return and TVDB's are gone" || fail "restore providers"
+fi
 
 echo "Scheduled tasks"
 tasks="$(curl -sS -H "$A" "$base/ScheduledTasks")"

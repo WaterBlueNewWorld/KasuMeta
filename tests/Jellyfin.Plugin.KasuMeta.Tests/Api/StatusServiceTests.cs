@@ -31,11 +31,27 @@ public sealed class StatusServiceTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     [Fact]
+    public async Task The_providers_are_listed_highest_priority_first()
+    {
+        _config.Current.TvdbEnabled = true;
+        _config.Current.TvdbApiKey = "tvdb-key";
+        _config.Current.TmdbWeight = 10;
+        _config.Current.TvdbWeight = 90;
+
+        var status = await _service.BuildAsync(None);
+
+        Assert.True(status.TvdbConfigured);
+        Assert.Equal(["tvdb", "tmdb"], status.MetadataProviders);
+    }
+
+    [Fact]
     public async Task An_empty_store_reports_zeros_and_the_configuration()
     {
         var status = await _service.BuildAsync(None);
 
         Assert.Equal(("1.2.3.0", true, false, 0), (status.Version, status.TmdbConfigured, status.AniListEnabled, status.Queued));
+        Assert.False(status.TvdbConfigured);
+        Assert.Equal(["tmdb"], status.MetadataProviders);
         Assert.Equal(new ItemCounts(0, 0, 0, 0, 0), status.Items);
         Assert.Empty(status.RecentErrors);
         Assert.Empty(status.Providers);

@@ -224,6 +224,53 @@ public class SqliteLocalizedMetadataStoreTests
     }
 
     [Fact]
+    public async Task Replacing_several_providers_swaps_their_text_and_images_together()
+    {
+        using var db = new TestDatabase();
+        await db.Store.UpsertFieldsAsync(
+            [
+                new(Spirited, "es-MX", MetadataFields.Name, "Vieja", MetadataSources.Tmdb),
+                new(Spirited, "en-US", MetadataFields.Name, "Old TVDB", MetadataSources.Tvdb),
+                new(Spirited, "ja-JP", MetadataFields.Name, "Locked", MetadataSources.Tvdb, Locked: true),
+                new(Spirited, "ja-Latn", MetadataFields.Name, "Romaji", MetadataSources.AniList),
+                new(Other, "es-MX", MetadataFields.Name, "Otra", MetadataSources.Tmdb),
+            ],
+            None);
+        await db.Store.UpsertImagesAsync([new(Spirited, "es-MX", LocalizedImageTypes.Primary, "https://x/old.jpg", MetadataSources.Tmdb)], None);
+
+        var written = await db.Store.ReplaceProvidersAsync(
+            Spirited,
+            [MetadataSources.Tmdb, MetadataSources.Tvdb],
+            [
+                new(Spirited, "es-MX", MetadataFields.Name, "Nueva", MetadataSources.Tvdb),
+                new(Spirited, "ja-JP", MetadataFields.Name, "Skipped", MetadataSources.Tmdb), // the locked row stays
+            ],
+            [new(Spirited, "es-MX", LocalizedImageTypes.Primary, "https://x/tvdb.jpg", MetadataSources.Tvdb, Width: 680, Height: 1000)],
+            None);
+
+        Assert.Equal(2, written);
+        var rows = await db.Store.GetFieldsAsync([Spirited, Other], null, None);
+        Assert.Equal(
+            ["Locked tvdb", "Nueva tvdb", "Otra tmdb", "Romaji anilist"],
+            rows.Select(r => $"{r.Value} {r.Source}").Order(StringComparer.Ordinal));
+        var image = Assert.Single(await db.Store.GetImagesAsync([Spirited], null, None));
+        Assert.Equal(("https://x/tvdb.jpg", MetadataSources.Tvdb, 680), (image.Url, image.Source, image.Width!.Value));
+    }
+
+    [Fact]
+    public async Task Replacing_several_providers_refuses_rows_of_other_sources_or_locked()
+    {
+        using var db = new TestDatabase();
+        string[] main = [MetadataSources.Tmdb, MetadataSources.Tvdb];
+
+        await Assert.ThrowsAsync<ArgumentException>(() => db.Store.ReplaceProvidersAsync(
+            Spirited, main, [new(Spirited, "es-MX", MetadataFields.Name, "x", MetadataSources.Manual)], [], None));
+        await Assert.ThrowsAsync<ArgumentException>(() => db.Store.ReplaceProvidersAsync(
+            Spirited, main, [], [new(Spirited, "es-MX", LocalizedImageTypes.Primary, "https://x", MetadataSources.Tvdb, Locked: true)], None));
+        await Assert.ThrowsAsync<ArgumentException>(() => db.Store.ReplaceProvidersAsync(Spirited, [], [], [], None));
+    }
+
+    [Fact]
     public async Task Image_sizes_round_trip_and_provider_images_are_replaced()
     {
         using var db = new TestDatabase();

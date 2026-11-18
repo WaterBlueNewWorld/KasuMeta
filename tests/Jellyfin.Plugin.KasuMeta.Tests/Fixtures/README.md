@@ -35,3 +35,21 @@ without a recognisable User-Agent (error 1010), so send one when re-recording.
 | `anilist/media-404.json` | 999999999 (HTTP 404 body) |
 
 Data from [AniList](https://anilist.co).
+
+## TVDB
+
+Recorded on 2026-11-17 from `https://api4.thetvdb.com/v4/` with the dev server's TVDB key, then
+trimmed to the fields `TvdbClient` reads (characters, companies, trailers and the like removed).
+The tests log in with a made-up token; no fixture holds a key or token.
+
+| File | Request |
+|---|---|
+| `tvdb/movie-963.json` | `GET /movies/963/extended?meta=translations` (The Cabin in the Woods) |
+| `tvdb/series-370931.json` | `GET /series/370931/extended?meta=translations` (Magia Record; also answers the `short=true` season lookup) |
+| `tvdb/season-1805557.json` | `GET /seasons/1805557/extended?meta=translations` (Magia Record, season 1) |
+| `tvdb/episode-7489229.json` | `GET /episodes/7489229/extended?meta=translations` (Magia Record S1E1) |
+| `tvdb/series-346988-episodes-s1e5.json` | `GET /series/346988/episodes/default?page=0&season=1&episodeNumber=5` (Revue Starlight) |
+| `tvdb/remoteid-tt1259521.json` | `GET /search/remoteid/tt1259521` |
+| `tvdb/not-found.json` | `GET /series/99999999/extended` (HTTP 404 body) |
+
+Metadata provided by TheTVDB (https://thetvdb.com).

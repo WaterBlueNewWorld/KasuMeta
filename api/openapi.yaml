@@ -381,7 +381,7 @@ components:
 
     KasuMetaStatus:
       type: object
-      required: [Version, SchemaVersion, SearchIndex, TmdbConfigured, AniListEnabled, Queued, Items, RecentErrors, Providers]
+      required: [Version, SchemaVersion, SearchIndex, TmdbConfigured, TvdbConfigured, MetadataProviders, AniListEnabled, Queued, Items, RecentErrors, Providers]
       properties:
         Version: { type: string }
         SchemaVersion: { type: integer }
@@ -389,6 +389,13 @@ components:
           type: boolean
           description: False when the server's SQLite lacks FTS5 and search matches substrings instead.
         TmdbConfigured: { type: boolean }
+        TvdbConfigured: { type: boolean }
+        MetadataProviders:
+          type: array
+          description: The main providers turned on, highest priority first; its values win where both have one. Empty when TMDB and TVDB are both off.
+          items:
+            type: string
+            enum: [tmdb, tvdb]
         AniListEnabled: { type: boolean }
         Queued:
           type: integer
@@ -400,7 +407,7 @@ components:
           items: { $ref: "#/components/schemas/FetchProblem" }
         Providers:
           type: object
-          description: Counters per provider (tmdb, anilist) since the server started; a provider not used yet is absent.
+          description: Counters per provider (tmdb, tvdb, anilist) since the server started; a provider not used yet is absent.
           additionalProperties: { $ref: "#/components/schemas/ProviderCounters" }
     ItemCounts:
       type: object

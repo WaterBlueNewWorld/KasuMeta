@@ -17,6 +17,15 @@ public sealed class KasuMetaStatus
     /// <summary>Gets or sets a value indicating whether a TMDB key is set.</summary>
     public bool TmdbConfigured { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether a TVDB key is set.</summary>
+    public bool TvdbConfigured { get; set; }
+
+    /// <summary>
+    /// Gets or sets the main providers in use, the one whose values win first (<c>tmdb</c>,
+    /// <c>tvdb</c>); empty when both are turned off.
+    /// </summary>
+    public IReadOnlyList<string> MetadataProviders { get; set; } = [];
+
     /// <summary>Gets or sets a value indicating whether AniList is turned on.</summary>
     public bool AniListEnabled { get; set; }
 
@@ -31,7 +40,7 @@ public sealed class KasuMetaStatus
 
     /// <summary>
     /// Gets or sets each provider's counters since the server started (<c>tmdb</c>,
-    /// <c>anilist</c>); a provider not used yet is absent.
+    /// <c>tvdb</c>, <c>anilist</c>); a provider not used yet is absent.
     /// </summary>
     public IReadOnlyDictionary<string, ProviderCounters> Providers { get; set; } = new Dictionary<string, ProviderCounters>();
 }
@@ -39,7 +48,7 @@ public sealed class KasuMetaStatus
 /// <summary>Items per fetch outcome.</summary>
 /// <param name="Total">Every item with a fetch state.</param>
 /// <param name="Ok">Fetched.</param>
-/// <param name="Skipped">Nothing to fetch (no TMDB or AniList id, or unknown to them).</param>
+/// <param name="Skipped">Nothing to fetch (no usable TMDB, TVDB or AniList id, or unknown to them).</param>
 /// <param name="Error">The last fetch failed; retried by "Refresh stale translations".</param>
 /// <param name="Pending">Queued before and never finished (e.g. a restart mid-fetch).</param>
 public sealed record ItemCounts(int Total, int Ok, int Skipped, int Error, int Pending);

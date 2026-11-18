@@ -3,6 +3,11 @@
   "SchemaVersion": 3,
   "SearchIndex": true,
   "TmdbConfigured": true,
+  "TvdbConfigured": true,
+  "MetadataProviders": [
+    "tmdb",
+    "tvdb"
+  ],
   "AniListEnabled": true,
   "Queued": 0,
   "Items": {

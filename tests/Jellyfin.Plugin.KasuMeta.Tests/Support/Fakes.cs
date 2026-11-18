@@ -2,6 +2,7 @@ using Jellyfin.Plugin.KasuMeta.Configuration;
 using Jellyfin.Plugin.KasuMeta.Library;
 using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
+using Jellyfin.Plugin.KasuMeta.Providers.Tvdb;
 
 namespace Jellyfin.Plugin.KasuMeta.Tests.Support;
 
@@ -59,6 +60,16 @@ internal sealed class FakeLibrary : ILibraryItemSource
     public static LibraryItemInfo WithIds(Guid id, ItemKind kind, params (string Provider, string Id)[] ids) =>
         new(id, kind, ids.ToDictionary(i => i.Provider, i => i.Id), Ids(null));
 
+    /// <summary>A season or episode with its own ids and its series' ids.</summary>
+    public static LibraryItemInfo Child(
+        Guid id,
+        ItemKind kind,
+        (string Provider, string Id)[] own,
+        (string Provider, string Id)[] series,
+        int? season,
+        int? episode = null) =>
+        new(id, kind, own.ToDictionary(i => i.Provider, i => i.Id), series.ToDictionary(i => i.Provider, i => i.Id), season, episode);
+
     private static Dictionary<string, string> Ids(string? tmdb) =>
         tmdb is null ? [] : new Dictionary<string, string> { [ProviderNames.Tmdb] = tmdb };
 }
@@ -75,6 +86,54 @@ internal sealed class FakeAniList : IAniListClient
         Calls.Add(mediaId);
         return Task.FromResult(Answer(mediaId));
     }
+}
+
+/// <summary>Answers TVDB lookups from scripts and records the calls (<c>movie/963</c>, <c>find/season/370931/1</c>).</summary>
+internal sealed class FakeTvdb : ITvdbClient
+{
+    public List<string> Calls { get; } = [];
+
+    public Func<string, TvdbTitle?> Answer { get; set; } = _ => new TvdbTitle([], []);
+
+    /// <summary>Gets or sets the answer to the id lookups; the default finds nothing.</summary>
+    public Func<string, int?> Find { get; set; } = _ => null;
+
+    public Task<TvdbTitle?> GetMovieAsync(int movieId, CancellationToken cancellationToken) => Call($"movie/{movieId}");
+
+    public Task<TvdbTitle?> GetSeriesAsync(int seriesId, CancellationToken cancellationToken) => Call($"series/{seriesId}");
+
+    public Task<TvdbTitle?> GetSeasonAsync(int seasonId, CancellationToken cancellationToken) => Call($"season/{seasonId}");
+
+    public Task<TvdbTitle?> GetEpisodeAsync(int episodeId, CancellationToken cancellationToken) => Call($"episode/{episodeId}");
+
+    public Task<int?> FindSeasonIdAsync(int seriesId, int seasonNumber, CancellationToken cancellationToken) =>
+        Lookup($"find/season/{seriesId}/{seasonNumber}");
+
+    public Task<int?> FindEpisodeIdAsync(int seriesId, int seasonNumber, int episodeNumber, CancellationToken cancellationToken) =>
+        Lookup($"find/episode/{seriesId}/{seasonNumber}/{episodeNumber}");
+
+    public Task<int?> FindByImdbIdAsync(string imdbId, bool series, CancellationToken cancellationToken) =>
+        Lookup($"find/{(series ? "series" : "movie")}/{imdbId}");
+
+    private Task<TvdbTitle?> Call(string path)
+    {
+        Calls.Add(path);
+        return Task.FromResult(Answer(path));
+    }
+
+    private Task<int?> Lookup(string path)
+    {
+        Calls.Add(path);
+        return Task.FromResult(Find(path));
+    }
+}
+
+/// <summary>Raises <see cref="Changed"/> by hand, as saving the plugin page would.</summary>
+internal sealed class FakeConfigurationChanges : IConfigurationChanges
+{
+    public event EventHandler<PluginConfiguration>? Changed;
+
+    public void Raise(PluginConfiguration config) => Changed?.Invoke(this, config);
 }
 
 /// <summary>Answers from a script and records the calls.</summary>

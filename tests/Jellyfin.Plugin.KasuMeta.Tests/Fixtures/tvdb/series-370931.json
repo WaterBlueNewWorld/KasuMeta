@@ -1,0 +1,590 @@
+{
+ "status": "success",
+ "data": {
+  "id": 370931,
+  "name": "マギアレコード 魔法少女まどか☆マギカ外伝",
+  "originalLanguage": "jpn",
+  "nameTranslations": [
+   "eng",
+   "jpn",
+   "deu",
+   "spa",
+   "fra",
+   "zho",
+   "ita",
+   "por",
+   "kor",
+   "rus",
+   "pt"
+  ],
+  "overviewTranslations": [
+   "eng",
+   "jpn",
+   "deu",
+   "spa",
+   "fra",
+   "zho",
+   "ita",
+   "por",
+   "kor",
+   "rus",
+   "pt"
+  ],
+  "translations": {
+   "nameTranslations": [
+    {
+     "name": "Magia Record: Puella Magi Madoka Magica Side Story",
+     "language": "eng"
+    },
+    {
+     "name": "マギアレコード 魔法少女まどか☆マギカ外伝",
+     "language": "jpn",
+     "isPrimary": true
+    },
+    {
+     "name": "Magia Record: Puella Magi Madoka Magica Side Story",
+     "language": "deu"
+    },
+    {
+     "name": "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden",
+     "language": "spa"
+    },
+    {
+     "name": "Magia Record : Puella Magi Madoka Magica Side Story",
+     "language": "fra"
+    },
+    {
+     "name": "魔法纪录 魔法少女小圆外传",
+     "language": "zho"
+    },
+    {
+     "name": "Magia Record: Puella Magi Madoka Magica Side Story",
+     "language": "ita"
+    },
+    {
+     "name": "Magia Record: Puella Magi Madoka Magica Side Story",
+     "language": "por"
+    },
+    {
+     "name": "마기아 레코드 마법소녀 마도카☆마기카 외전",
+     "language": "kor"
+    },
+    {
+     "name": "Записи о магии: Девочка-волшебница Мадока Волшебство Гайдэн",
+     "language": "rus"
+    },
+    {
+     "name": "マギアレコード:魔法少女まどか☆マギカ外伝",
+     "isAlias": true,
+     "language": "jpn"
+    },
+    {
+     "name": "Magia Record: Mahō Shōjo Madoka Magica Gaiden",
+     "isAlias": true,
+     "language": "jpn"
+    },
+    {
+     "name": "Magia Record: Mahou Shoujo Madoka Magica Gaiden",
+     "isAlias": true,
+     "language": "jpn"
+    },
+    {
+     "name": "MagiReco",
+     "isAlias": true,
+     "language": "jpn"
+    },
+    {
+     "name": "Записи о магии",
+     "isAlias": true,
+     "language": "rus"
+    },
+    {
+     "name": "Magia Record: Puella Magi Madoka Magica Side Story",
+     "language": "pt"
+    },
+    {
+     "name": "Magia Record 魔法少女小圆外传",
+     "isAlias": true,
+     "language": "zho"
+    },
+    {
+     "name": "MagiReco",
+     "isAlias": true,
+     "language": "eng"
+    },
+    {
+     "name": "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden",
+     "isAlias": true,
+     "language": "eng"
+    }
+   ],
+   "overviewTranslations": [
+    {
+     "overview": "Few people know the truth: the world is safe thanks to the Magical Girls who are forced to slay Witches. Even though these girls are putting their lives on the line for a wish, rumors say they can be saved in Kamihama City. That’s where Iroha Tamaki is headed in search of answers; she can’t remember the wish she made to Kyubey.",
+     "language": "eng"
+    },
+    {
+     "overview": "魔法少女・玉城いろは、謎の街、神浜で行方不明の妹を探す。魔法少女は救いを得ることができると噂されている。",
+     "language": "jpn",
+     "isPrimary": true
+    },
+    {
+     "overview": "Ein magisches Mädchen, Iroha Tamaki, sucht nach ihrer vermissten Schwester in der mysteriösen Stadt Kamihama, wo Gerüchten zufolge magische Mädchen Erlösung erreichen können.",
+     "language": "deu"
+    },
+    {
+     "overview": "Una chica mágica, Iroha Tamaki, busca a su hermana desaparecida en la misteriosa ciudad de Kamihama, donde se rumorea que las chicas mágicas pueden alcanzar la salvación.",
+     "language": "spa"
+    },
+    {
+     "overview": "Une fille magique, Iroha Tamaki, cherche sa sœur disparue dans la mystérieuse ville de Kamihama, où la rumeur dit que les filles magiques peuvent obtenir le salut.",
+     "language": "fra"
+    },
+    {
+     "overview": "魔法少女们以实现愿望作为代价，持续着不为人知的战斗。可是，环彩羽却忘记了自己许下的愿望。“我成为魔法少女时，许下了什么愿望？”她的日常生活中出现了这样无法填补的空缺。就在不明原因的情况下，她每天战斗着……就在这时，魔法少女之间开始出现一个传闻：“只要去神滨市，魔法少女就能得到救赎。”魔法少女与传闻汇聚的城市——神滨市。为了为了找回失去的愿望，环彩羽的故事由此展开——",
+     "language": "zho"
+    },
+    {
+     "overview": "Una ragazza magica, Iroha Tamaki, cerca la sorella scomparsa nella misteriosa città di Kamihama, dove si dice che le ragazze magiche possano ottenere la salvezza.",
+     "language": "ita"
+    },
+    {
+     "overview": "Em troca da realização de um desejo, as Garotas Mágicas lutam entre si, sem que o resto do mundo saiba. Mas Iroha Tamaki não consegue lembrar o desejo que fez. \"O que foi que eu desejei quando virei uma garota mágica?\" Há um vazio em sua vida. Algo de importante foi perdido. Mas ela continua a lutar todos os dias, mesmo sem saber o porquê. Até que um rumor começa a se espalhar entre as Garotas. \"As Garotas que vão pra Kamihama encontram a salvação.\" Kamihama, a cidade onde as Garotas Mágicas se reúnem. É lá que começa a história de Iroha Tamaki, em busca de um desejo perdido.",
+     "language": "por"
+    },
+    {
+     "overview": "소원을 이뤄주는 대가로 남들은 모르는 싸움을 계속하는 마법소녀들.\r\n하지만 타마키 이로하는 자신의 소원을 잊어버렸다.\r\n\r\n'마법소녀가 됐을 때 나는 뭘 빌었었지?'\r\n\r\n일상 속에서 휑하니 뚫린 구멍.\r\n잃어버린 소중한 무언가.\r\n이유도 모른 채 싸움을 계속하는 나날......\r\n\r\n그런 때에 마법소녀들 사이에서\r\n소문이 돌기 시작한다.\r\n\r\n'카미하마시에 가면 마법소녀는 구원받는다.'\r\n\r\n마법소녀와 소문이 모이는 마을 카미하마시.\r\n잃어버린 소원을 찾고 싶은\r\n타마키 이로하의 이야기가 시작된다.",
+     "language": "kor"
+    },
+    {
+     "overview": "Девушка-волшебница Ироха Тамаки ищет свою пропавшую сестру в загадочном городе Камихама, где, по слухам, девочки-волшебницы могут добиться спасения.",
+     "language": "rus"
+    },
+    {
+     "overview": "Em troca da realização de um desejo, as Garotas Mágicas lutam entre si, sem que o resto do mundo saiba. Mas Iroha Tamaki não consegue lembrar o desejo que fez. \"O que foi que eu desejei quando virei uma garota mágica?\" Há um vazio em sua vida. Algo de importante foi perdido. Mas ela continuar a lutar todos os dias, mesmo sem saber o porquê. Até que um rumor começa a se espalhar entre as Garotas. \"As Garotas que vão pra Kamihama encontram a salvação.\" Kamihama, a cidade onde as Garotas Mágicas se reúnem. É lá que começa a história de Iroha Tamaki, em busca de um desejo perdido.",
+     "language": "pt"
+    }
+   ],
+   "aliases": [
+    "マギアレコード:魔法少女まどか☆マギカ外伝",
+    "Magia Record: Mahō Shōjo Madoka Magica Gaiden",
+    "Magia Record: Mahou Shoujo Madoka Magica Gaiden",
+    "MagiReco",
+    "Записи о магии",
+    "Magia Record 魔法少女小圆外传",
+    "MagiReco",
+    "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden"
+   ]
+  },
+  "defaultSeasonType": 1,
+  "seasons": [
+   {
+    "id": 830045,
+    "number": 0,
+    "type": {
+     "id": 1,
+     "name": "Aired Order",
+     "type": "official",
+     "alternateName": null
+    },
+    "seriesId": 370931
+   },
+   {
+    "id": 1748064,
+    "number": 1,
+    "type": {
+     "id": 3,
+     "name": "Absolute Order",
+     "type": "absolute",
+     "alternateName": null
+    },
+    "seriesId": 370931
+   },
+   {
+    "id": 1805557,
+    "number": 1,
+    "type": {
+     "id": 1,
+     "name": "Aired Order",
+     "type": "official",
+     "alternateName": null
+    },
+    "seriesId": 370931
+   },
+   {
+    "id": 1849344,
+    "number": 2,
+    "type": {
+     "id": 1,
+     "name": "Aired Order",
+     "type": "official",
+     "alternateName": null
+    },
+    "seriesId": 370931
+   },
+   {
+    "id": 1959009,
+    "number": 3,
+    "type": {
+     "id": 1,
+     "name": "Aired Order",
+     "type": "official",
+     "alternateName": null
+    },
+    "seriesId": 370931
+   }
+  ],
+  "artworks": [
+   {
+    "id": 62025940,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/backgrounds/62025940.jpg",
+    "language": null,
+    "type": 3,
+    "width": 1920,
+    "height": 1080,
+    "score": 100001,
+    "includesText": false
+   },
+   {
+    "id": 61997513,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/posters/61997513.jpg",
+    "language": "jpn",
+    "type": 2,
+    "width": 680,
+    "height": 1000,
+    "score": 100001,
+    "includesText": true
+   },
+   {
+    "id": 62768111,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearlogo/611e886df260f.png",
+    "language": "jpn",
+    "type": 23,
+    "width": 800,
+    "height": 310,
+    "score": 100001,
+    "includesText": true
+   },
+   {
+    "id": 62050053,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/backgrounds/62050053.jpg",
+    "language": null,
+    "type": 3,
+    "width": 1920,
+    "height": 1080,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 62050054,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/backgrounds/62050054.jpg",
+    "language": null,
+    "type": 3,
+    "width": 1920,
+    "height": 1080,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 62050055,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/backgrounds/62050055.jpg",
+    "language": null,
+    "type": 3,
+    "width": 1920,
+    "height": 1080,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 62050057,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/backgrounds/62050057.jpg",
+    "language": null,
+    "type": 3,
+    "width": 1920,
+    "height": 1080,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 62433903,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/backgrounds/5fe72283ee429.jpg",
+    "language": null,
+    "type": 3,
+    "width": 1920,
+    "height": 1080,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 62999037,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/backgrounds/620e77b63e967.jpg",
+    "language": null,
+    "type": 3,
+    "width": 1920,
+    "height": 1080,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 62012278,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/icons/62012278.jpg",
+    "language": "jpn",
+    "type": 5,
+    "width": 1024,
+    "height": 1024,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 62473667,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/icons/60115c13af42d.jpg",
+    "language": "jpn",
+    "type": 5,
+    "width": 1024,
+    "height": 1024,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 62473668,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/icons/60115c1fcb8d3.jpg",
+    "language": "jpn",
+    "type": 5,
+    "width": 1024,
+    "height": 1024,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 62433899,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/posters/5fe720ffd3f22.jpg",
+    "language": "jpn",
+    "type": 2,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 62768117,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearart/611e8885764cb.png",
+    "language": "jpn",
+    "type": 22,
+    "width": 1000,
+    "height": 562,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 62768118,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearart/611e8888d7572.png",
+    "language": "jpn",
+    "type": 22,
+    "width": 1000,
+    "height": 562,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 62768113,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearlogo/611e887366d82.png",
+    "language": "jpn",
+    "type": 23,
+    "width": 800,
+    "height": 310,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 63928332,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/banners/6622bfed11852.jpg",
+    "language": "jpn",
+    "type": 1,
+    "width": 758,
+    "height": 140,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 61997516,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/banners/61997516.jpg",
+    "language": "jpn",
+    "type": 1,
+    "width": 758,
+    "height": 140,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 62037453,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/posters/62037453.jpg",
+    "language": "eng",
+    "type": 2,
+    "width": 680,
+    "height": 1000,
+    "score": 1,
+    "includesText": true
+   },
+   {
+    "id": 62768115,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearart/611e887f6ffe0.png",
+    "language": "eng",
+    "type": 22,
+    "width": 1000,
+    "height": 562,
+    "score": 1,
+    "includesText": true
+   },
+   {
+    "id": 62473665,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/icons/60115bf9ac36d.jpg",
+    "language": "eng",
+    "type": 5,
+    "width": 1024,
+    "height": 1024,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62473666,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/icons/60115c04b8556.jpg",
+    "language": "eng",
+    "type": 5,
+    "width": 1024,
+    "height": 1024,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62718503,
+    "image": "https://artworks.thetvdb.com/banners/v4/season/1849344/posters/6106083635db8.jpg",
+    "language": "spa",
+    "type": 7,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62433898,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/posters/5fe720f098218.jpg",
+    "language": "eng",
+    "type": 2,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62472838,
+    "image": "https://artworks.thetvdb.com/banners/series/370931/posters/60104fc9af62a.jpg",
+    "language": "eng",
+    "type": 2,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62717360,
+    "image": "https://artworks.thetvdb.com/banners/v4/season/1849344/posters/61048a0ed2aec.jpg",
+    "language": "eng",
+    "type": 7,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62560193,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/posters/606edcf80f3a6.jpg",
+    "language": "spa",
+    "type": 2,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62560195,
+    "image": "https://artworks.thetvdb.com/banners/v4/season/1805557/posters/606edda2b0c1b.jpg",
+    "language": "spa",
+    "type": 7,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 63087827,
+    "image": "https://artworks.thetvdb.com/banners/v4/season/1959009/posters/6289470558b3d.jpg",
+    "language": "eng",
+    "type": 7,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62530788,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/posters/604ba34ceb13b.jpg",
+    "language": "eng",
+    "type": 2,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62768116,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearart/611e8882a2586.png",
+    "language": "eng",
+    "type": 22,
+    "width": 1000,
+    "height": 562,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62768112,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearlogo/611e8871598e1.png",
+    "language": "eng",
+    "type": 23,
+    "width": 800,
+    "height": 310,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62768114,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/clearlogo/611e8875aace6.png",
+    "language": "eng",
+    "type": 23,
+    "width": 800,
+    "height": 310,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62710367,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/banners/60fa6a9b36eb7.jpg",
+    "language": "eng",
+    "type": 1,
+    "width": 758,
+    "height": 140,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 62710394,
+    "image": "https://artworks.thetvdb.com/banners/v4/series/370931/banners/60fa710eb53b0.jpg",
+    "language": "eng",
+    "type": 1,
+    "width": 758,
+    "height": 140,
+    "score": 0,
+    "includesText": true
+   }
+  ]
+ }
+}

@@ -1,0 +1,12 @@
+{
+ "status": "success",
+ "data": [
+  {
+   "movie": {
+    "id": 963,
+    "name": "The Cabin in the Woods",
+    "slug": "the-cabin-in-the-woods"
+   }
+  }
+ ]
+}

@@ -146,6 +146,92 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     }
 
     /// <inheritdoc />
+    public async Task<int> ReplaceProvidersAsync(
+        Guid itemId,
+        IReadOnlyCollection<string> sources,
+        IReadOnlyCollection<LocalizedField> fields,
+        IReadOnlyCollection<LocalizedImage> images,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        ArgumentNullException.ThrowIfNull(fields);
+        ArgumentNullException.ThrowIfNull(images);
+        var owned = sources.ToHashSet(StringComparer.Ordinal);
+        if (owned.Count == 0 || owned.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("At least one source, none empty.", nameof(sources));
+        }
+
+        foreach (var f in fields)
+        {
+            if (f.ItemId != itemId || !owned.Contains(f.Source) || f.Locked)
+            {
+                throw new ArgumentException("Every row must be an unlocked row of this item and one of the sources.", nameof(fields));
+            }
+
+            RequireKnown(f.Field, MetadataFields.All, nameof(LocalizedField.Field));
+            RequireLocale(f.Locale);
+        }
+
+        foreach (var i in images)
+        {
+            if (i.ItemId != itemId || !owned.Contains(i.Source) || i.Locked)
+            {
+                throw new ArgumentException("Every row must be an unlocked row of this item and one of the sources.", nameof(images));
+            }
+
+            RequireKnown(i.ImageType, LocalizedImageTypes.All, nameof(LocalizedImage.ImageType));
+            RequireLocale(i.Locale);
+        }
+
+        var now = _time.GetUtcNow().ToUnixTimeSeconds();
+        int written;
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            var transaction = (SqliteTransaction)await connection
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                foreach (var table in new[] { "localized_field", "localized_image" })
+                {
+                    foreach (var source in owned)
+                    {
+                        await using var delete = connection.CreateCommand();
+                        delete.Transaction = transaction;
+                        // Table comes from this class's own literals, never from input.
+                        delete.CommandText = $"DELETE FROM {table} WHERE item_id = $item AND source = $source AND locked = 0;";
+                        delete.Parameters.AddWithValue("$item", FormatId(itemId));
+                        delete.Parameters.AddWithValue("$source", source);
+                        await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                written = await WriteRowsAsync(
+                        connection,
+                        transaction,
+                        UpsertFieldSql,
+                        fields.Select(f => (f.ItemId, f.Locale, f.Field, f.Value, f.Source, f.Locked, (int?)null, (int?)null)),
+                        now,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                written += await WriteRowsAsync(
+                        connection,
+                        transaction,
+                        UpsertImageSql,
+                        images.Select(i => (i.ItemId, i.Locale, i.ImageType, i.Url, i.Source, i.Locked, i.Width, i.Height)),
+                        now,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return written;
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<LocalizedField>> GetFieldsAsync(
         IReadOnlyCollection<Guid> itemIds,
         IReadOnlyCollection<string>? locales,

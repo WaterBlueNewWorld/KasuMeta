@@ -1,0 +1,368 @@
+{
+ "status": "success",
+ "data": {
+  "id": 963,
+  "name": "The Cabin in the Woods",
+  "originalLanguage": "eng",
+  "nameTranslations": [
+   "spa",
+   "fra",
+   "zho",
+   "rus",
+   "jpn",
+   "kor",
+   "hun",
+   "por",
+   "ces",
+   "tur",
+   "heb",
+   "ita",
+   "pol",
+   "eng",
+   "pt",
+   "deu"
+  ],
+  "overviewTranslations": [
+   "spa",
+   "fra",
+   "zho",
+   "rus",
+   "jpn",
+   "kor",
+   "hun",
+   "por",
+   "ces",
+   "tur",
+   "heb",
+   "ita",
+   "pol",
+   "eng",
+   "pt",
+   "deu",
+   "deu"
+  ],
+  "translations": {
+   "nameTranslations": [
+    {
+     "name": "La cabaña en el bosque",
+     "language": "spa"
+    },
+    {
+     "name": "La Cabane dans les bois",
+     "tagline": "Vous croyez connaître l'histoire ? Vous pensez déjà connaître la fin ?",
+     "language": "fra"
+    },
+    {
+     "name": "林中小屋",
+     "language": "zho"
+    },
+    {
+     "name": "Хижина в лесу",
+     "language": "rus"
+    },
+    {
+     "name": "キャビン",
+     "language": "jpn"
+    },
+    {
+     "name": "캐빈 인 더 우즈",
+     "language": "kor"
+    },
+    {
+     "name": "Ház az erdő mélyén",
+     "language": "hun"
+    },
+    {
+     "name": "O Segredo da Cabana",
+     "language": "por"
+    },
+    {
+     "name": "Chata v horách",
+     "language": "ces"
+    },
+    {
+     "name": "Dehşet Kapanı",
+     "language": "tur"
+    },
+    {
+     "name": "בקתת הפחד",
+     "language": "heb"
+    },
+    {
+     "name": "Quella casa nel bosco",
+     "language": "ita"
+    },
+    {
+     "name": "Dom w głębi lasu",
+     "tagline": "Myślisz, że wiesz czym jest horror? Zrozumiesz, że nie wiesz nic",
+     "language": "pol"
+    },
+    {
+     "name": "The Cabin in the Woods",
+     "tagline": "You think you know the story.",
+     "language": "eng",
+     "isPrimary": true
+    },
+    {
+     "name": "O Segredo da Cabana",
+     "language": "pt"
+    },
+    {
+     "name": "The Cabin in the Woods",
+     "language": "deu"
+    }
+   ],
+   "overviewTranslations": [
+    {
+     "overview": "Cinco estudiantes universitarios se preparan para pasar el fin de semana en una cabaña situada en un remoto bosque y sin medios de comunicación con el exterior. En el sótano encuentran una extraña colección de recuerdos; entre ellos, un diario que habla de la antigua familia que ocupó la casa. Mientras tanto, un par de técnicos en una planta industrial se están preparando para una operación desconocida. Están filmando a los jóvenes con cámaras ocultas y a través del diseño de la cabaña, el uso de sofisticados controles ambientales y la liberación de drogas en el aire, los técnicos manipulan el medio ambiente asemejándolo a un arquetipo de terror.",
+     "language": "spa"
+    },
+    {
+     "overview": "Cinq amis partent passer le week-end dans une cabane perdue au fond des bois. Ils n’ont aucune idée du cauchemar qui les y attend, ni de ce que cache vraiment la cabane dans les bois…\r\n\r\nSigné par deux maîtres de l’horreur, Joss Whedon et Drew Goddard, voici un film qui réinvente et repousse toutes les conventions du genre. Attendez-vous à découvrir un nouveau niveau de terreur…",
+     "tagline": "Vous croyez connaître l'histoire ? Vous pensez déjà connaître la fin ?",
+     "language": "fra"
+    },
+    {
+     "overview": "Компания из пяти студентов отправляется на выходные в лесной домик, который недавно купил брат одного из них, — подальше от учёбы, где можно оторваться по-настоящему. Слегка поднабравшись, ребята обнаруживают дверь в подвал, где находят странную книгу и читают вслух заклинание, которое выпускает на волю полчища зомби. И это только начало невообразимых ужасов, с которыми придётся столкнуться незадачливым студентам.",
+     "language": "rus"
+    },
+    {
+     "overview": "夏休みに山へ探索に出かけた大学生5人組は、小屋の地下で謎の日記を手にする。そしてそのページをめくった途端、何者かが目覚め、大学生たちは次々と殺されていく。その裏では、ある組織が大学生たちがホラー映画などによくありそうな定番の死に方をするように仕向けていた。そこには、世界を揺るがすような秘密があった……。",
+     "language": "jpn"
+    },
+    {
+     "overview": "Nowy horror twórców \"The Avengers\" i \"Projekt: Monster\" z Chrisem Hemsworthem (\"Thor\") w roli głównej. \"Piła\" była przy nim jedynie niewinną zabawą. Grupa studentów wybiera się na weekend do domku w lesie, gdzie z dala od cywilizacji mogą robić wszystko, na co przyjdzie im ochota. W miejscu, do którego dotrą nie ma zasięgu komórek, a GPS nie odnajduje go na mapie. Jak mówi spotkany w pobliżu farmer \"Mogę pomóc wam tam dotrzeć, ale wydostać się będziecie musieli na własną rękę\". Ale czy będą w stanie? Jeśli sądzisz, że już znasz tę historię, zastanów się raz jeszcze.",
+     "tagline": "Myślisz, że wiesz czym jest horror? Zrozumiesz, że nie wiesz nic",
+     "language": "pol"
+    },
+    {
+     "overview": "Five friends go for a break at a remote cabin, where they get more than they bargained for, discovering the truth behind the cabin in the woods.",
+     "tagline": "You think you know the story.",
+     "language": "eng",
+     "isPrimary": true
+    },
+    {
+     "overview": "Cinco amigos chegam a uma cabana nas montanhas com regras bem definidas. Assim que o protocolo é quebrado, o castigo é iminente e todos serão punidos.",
+     "language": "pt"
+    },
+    {
+     "overview": "Fünf Freunde wollen ihren Urlaub in einer einsamen Hütte genießen. Doch nach einem Regelverstoß folgt die Strafe auf dem Fuße und es kommt sie teuer zu stehen.",
+     "language": "deu"
+    }
+   ],
+   "aliases": null
+  },
+  "artworks": [
+   {
+    "id": 2515377,
+    "image": "https://artworks.thetvdb.com/banners/movies/963/posters/651b5a59efbac.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100001,
+    "includesText": true
+   },
+   {
+    "id": 2601321,
+    "image": "https://artworks.thetvdb.com/banners/movies/963/backgrounds/963.jpg",
+    "language": null,
+    "type": 15,
+    "width": 1920,
+    "height": 1080,
+    "score": 100000,
+    "includesText": false
+   },
+   {
+    "id": 63673349,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/651b5ac4f116a.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 63673350,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/651b5adb83364.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 63673351,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/651b5aefc5619.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 64603418,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/696547a367930.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 64435493,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/689eb1ceb6373.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 64678186,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/69c10b918d6cb.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 64627776,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/6981fed211bf8.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 63738466,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/655e858c6879e.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 63738467,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/655e860a70a1e.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 63797604,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/65a3adf031407.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 64352934,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/6832762899207.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 64316082,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/67ffd624d085d.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 64316085,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/67ffd69a87ab5.jpg",
+    "language": "eng",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 100000,
+    "includesText": true
+   },
+   {
+    "id": 63586121,
+    "image": "https://artworks.thetvdb.com/banners/v4/movie/963/posters/64c16f09ef36b.jpg",
+    "language": "pol",
+    "type": 14,
+    "width": 680,
+    "height": 1000,
+    "score": 0,
+    "includesText": true
+   },
+   {
+    "id": 63769456,
+    "image": "https://artworks.thetvdb.com/banners/v4/actor/317598/photo/65831c75b578f.jpg",
+    "language": null,
+    "type": 13,
+    "width": 300,
+    "height": 450,
+    "score": 0,
+    "includesText": false
+   },
+   {
+    "id": 63769460,
+    "image": "https://artworks.thetvdb.com/banners/v4/actor/311280/photo/65831ccac1ff7.jpg",
+    "language": null,
+    "type": 13,
+    "width": 300,
+    "height": 450,
+    "score": 0,
+    "includesText": false
+   },
+   {
+    "id": 63769463,
+    "image": "https://artworks.thetvdb.com/banners/v4/actor/347105/photo/65831d16279c3.jpg",
+    "language": null,
+    "type": 13,
+    "width": 300,
+    "height": 450,
+    "score": 0,
+    "includesText": false
+   },
+   {
+    "id": 63769465,
+    "image": "https://artworks.thetvdb.com/banners/v4/actor/327460/photo/65831d463d068.jpg",
+    "language": null,
+    "type": 13,
+    "width": 300,
+    "height": 450,
+    "score": 0,
+    "includesText": false
+   },
+   {
+    "id": 63769484,
+    "image": "https://artworks.thetvdb.com/banners/v4/actor/283589/photo/65831e72cf6f5.jpg",
+    "language": null,
+    "type": 13,
+    "width": 300,
+    "height": 450,
+    "score": 0,
+    "includesText": false
+   }
+  ]
+ }
+}

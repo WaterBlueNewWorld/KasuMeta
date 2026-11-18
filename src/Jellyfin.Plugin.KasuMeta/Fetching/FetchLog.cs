@@ -22,4 +22,10 @@ internal static partial class FetchLog
 
     [LoggerMessage(Level = LogLevel.Information, Message = "KasuMeta {Task}: queued {Queued} of {Considered} items")]
     public static partial void TaskQueued(ILogger logger, string task, int queued, int considered);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "KasuMeta metadata providers changed to {Order}: queued {Queued} of {Considered} items")]
+    public static partial void ProvidersChanged(ILogger logger, string order, int queued, int considered);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "KasuMeta could not queue the library after a provider change")]
+    public static partial void ProvidersChangeFailed(ILogger logger, Exception exception);
 }

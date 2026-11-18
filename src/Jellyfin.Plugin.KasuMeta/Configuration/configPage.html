@@ -5,7 +5,7 @@
     <title>KasuMeta</title>
 </head>
 <body>
-<div id="KasuMetaConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+<div id="KasuMetaConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
     <div data-role="content">
         <div class="content-primary">
             <form id="KasuMetaConfigForm">
@@ -27,15 +27,55 @@
                     </label>
                 </div>
 
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDB API key</label>
-                    <input id="TmdbApiKey" name="TmdbApiKey" type="password" is="emby-input" autocomplete="off" />
-                    <div class="fieldDescription">Stays on the server; clients never see it.</div>
+                <h3 class="sectionTitle">Metadata providers</h3>
+
+                <div class="selectContainer">
+                    <label class="selectLabel" for="KasuMetaProviders">Titles, overviews and artwork from</label>
+                    <select id="KasuMetaProviders" name="KasuMetaProviders" is="emby-select">
+                        <option value="tmdb">TMDB only</option>
+                        <option value="tvdb">TVDB only</option>
+                        <option value="both">TMDB and TVDB, by priority weight</option>
+                    </select>
+                    <div class="fieldDescription">
+                        Changing this (or which provider wins) fetches the library again, one request per item
+                        and provider.
+                    </div>
                 </div>
 
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="TvdbApiKey">TVDB API key</label>
-                    <input id="TvdbApiKey" name="TvdbApiKey" type="password" is="emby-input" autocomplete="off" />
+                <div id="KasuMetaWeights">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TmdbWeight">TMDB priority weight</label>
+                        <input id="TmdbWeight" name="TmdbWeight" type="number" min="0" max="100" step="1" is="emby-input" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TvdbWeight">TVDB priority weight</label>
+                        <input id="TvdbWeight" name="TvdbWeight" type="number" min="0" max="100" step="1" is="emby-input" />
+                        <div class="fieldDescription">
+                            0–100. For each field (title, overview, tagline) or image, and each language, the
+                            provider with the higher weight wins; the other fills only what it lacks. A tie goes
+                            to TMDB. TVDB has one translation per language, so a TVDB win gives es-MX and es-ES
+                            the same Spanish text.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="inputContainer" id="KasuMetaTmdbKey">
+                    <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDB API key</label>
+                    <input id="TmdbApiKey" name="TmdbApiKey" type="password" is="emby-input" autocomplete="off" />
+                    <div class="fieldDescription">A v3 key or a v4 read access token. Stays on the server; clients never see it.</div>
+                </div>
+
+                <div id="KasuMetaTvdbKey">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TvdbApiKey">TVDB API key</label>
+                        <input id="TvdbApiKey" name="TvdbApiKey" type="password" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">A TVDB v4 key. Stays on the server; clients never see it.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TvdbPin">TVDB subscriber PIN</label>
+                        <input id="TvdbPin" name="TvdbPin" type="password" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">Only for a user-supported key; leave empty for a project key.</div>
+                    </div>
                 </div>
 
                 <div class="checkboxContainer checkboxContainer-withDescription">
@@ -44,7 +84,7 @@
                         <span>Anime titles from AniList</span>
                     </label>
                     <div class="fieldDescription checkboxFieldDescription">
-                        For items with an AniList id: English and native titles where TMDB has none, and
+                        For items with an AniList id: English and native titles where TMDB and TVDB have none, and
                         romaji titles, which search always finds. Add ja-Latn above to also offer
                         romaji as a display language. No key needed.
                     </div>
@@ -104,6 +144,31 @@
             return n + ' ' + (n === 1 ? one : many);
         }
 
+        function kasuMetaProviderName(name) {
+            return { tmdb: 'TMDB', tvdb: 'TVDB', anilist: 'AniList' }[name] || name;
+        }
+
+        // The provider choice is two flags in the configuration; the page shows it as one select.
+        function kasuMetaProviderChoice(config) {
+            if (config.TmdbEnabled && config.TvdbEnabled) {
+                return 'both';
+            }
+
+            return config.TvdbEnabled ? 'tvdb' : 'tmdb';
+        }
+
+        function kasuMetaShowProviderFields() {
+            var choice = document.querySelector('#KasuMetaProviders').value;
+            document.querySelector('#KasuMetaWeights').style.display = choice === 'both' ? '' : 'none';
+            document.querySelector('#KasuMetaTmdbKey').style.display = choice === 'tvdb' ? 'none' : '';
+            document.querySelector('#KasuMetaTvdbKey').style.display = choice === 'tmdb' ? 'none' : '';
+        }
+
+        function kasuMetaWeight(selector, fallback) {
+            var n = parseInt(document.querySelector(selector).value, 10);
+            return isNaN(n) ? fallback : Math.min(100, Math.max(0, n));
+        }
+
         function kasuMetaLoadStatus() {
             var table = document.querySelector('#KasuMetaStatusTable');
             var errors = document.querySelector('#KasuMetaErrorsTable');
@@ -112,7 +177,14 @@
                 errors.replaceChildren();
                 var items = s.Items;
                 kasuMetaRow(table, ['Version', s.Version + ' (database schema ' + s.SchemaVersion + ')']);
-                kasuMetaRow(table, ['TMDB key', s.TmdbConfigured ? 'Set' : 'Missing: nothing can be fetched']);
+                var order = s.MetadataProviders || [];
+                kasuMetaRow(table, ['Providers', order.length
+                    ? order.map(kasuMetaProviderName).join(' over ')
+                    : 'None: only AniList titles are fetched']);
+                order.forEach(function (p) {
+                    var set = p === 'tmdb' ? s.TmdbConfigured : s.TvdbConfigured;
+                    kasuMetaRow(table, [kasuMetaProviderName(p) + ' key', set ? 'Set' : 'Missing: nothing comes from ' + kasuMetaProviderName(p)]);
+                });
                 kasuMetaRow(table, ['AniList', s.AniListEnabled ? 'On' : 'Off']);
                 kasuMetaRow(table, ['Search', s.SearchIndex ? 'Full-text index' : 'Substring matching (no FTS5)']);
                 kasuMetaRow(table, ['Waiting to be fetched', s.Queued]);
@@ -127,7 +199,7 @@
                         text += '; last failure ' + kasuMetaWhen(p.LastFailureAt) + ': ' + p.LastFailure;
                     }
 
-                    kasuMetaRow(table, [name === 'tmdb' ? 'TMDB' : name === 'anilist' ? 'AniList' : name, text]);
+                    kasuMetaRow(table, [kasuMetaProviderName(name), text]);
                 });
 
                 var recent = s.RecentErrors || [];
@@ -145,6 +217,7 @@
         }
 
         document.querySelector('#KasuMetaStatusRefresh').addEventListener('click', kasuMetaLoadStatus);
+        document.querySelector('#KasuMetaProviders').addEventListener('change', kasuMetaShowProviderFields);
 
         document.querySelector('#KasuMetaConfigPage')
             .addEventListener('pageshow', function () {
@@ -154,6 +227,11 @@
                     document.querySelector('#FallbackToBaseLanguage').checked = config.FallbackToBaseLanguage;
                     document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
                     document.querySelector('#TvdbApiKey').value = config.TvdbApiKey || '';
+                    document.querySelector('#TvdbPin').value = config.TvdbPin || '';
+                    document.querySelector('#KasuMetaProviders').value = kasuMetaProviderChoice(config);
+                    document.querySelector('#TmdbWeight').value = config.TmdbWeight;
+                    document.querySelector('#TvdbWeight').value = config.TvdbWeight;
+                    kasuMetaShowProviderFields();
                     document.querySelector('#AniListEnabled').checked = config.AniListEnabled;
                     document.querySelector('#RefreshIntervalHours').value = config.RefreshIntervalHours;
                     Dashboard.hideLoadingMsg();
@@ -170,6 +248,12 @@
                     config.FallbackToBaseLanguage = document.querySelector('#FallbackToBaseLanguage').checked;
                     config.TmdbApiKey = document.querySelector('#TmdbApiKey').value.trim();
                     config.TvdbApiKey = document.querySelector('#TvdbApiKey').value.trim();
+                    config.TvdbPin = document.querySelector('#TvdbPin').value.trim();
+                    var choice = document.querySelector('#KasuMetaProviders').value;
+                    config.TmdbEnabled = choice !== 'tvdb';
+                    config.TvdbEnabled = choice !== 'tmdb';
+                    config.TmdbWeight = kasuMetaWeight('#TmdbWeight', 100);
+                    config.TvdbWeight = kasuMetaWeight('#TvdbWeight', 50);
                     config.AniListEnabled = document.querySelector('#AniListEnabled').checked;
                     config.RefreshIntervalHours = parseInt(document.querySelector('#RefreshIntervalHours').value, 10) || 168;
                     ApiClient.updatePluginConfiguration(KasuMetaConfig.pluginUniqueId, config).then(function (result) {

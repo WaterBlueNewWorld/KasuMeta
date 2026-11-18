@@ -32,10 +32,15 @@ public sealed record LibraryItemInfo(
 
     /// <summary>
     /// Gets the inputs a fetch depends on, as saved in <c>fetch_state</c>: the item's provider ids,
-    /// plus for seasons and episodes the series' TMDB id and the numbers. When this changes, the
-    /// stored translations may belong to another title and must be fetched again.
+    /// plus for seasons and episodes the series' TMDB id (and TVDB id, when TVDB is used) and the
+    /// numbers. When this changes, the stored translations may belong to another title and must
+    /// be fetched again.
     /// </summary>
-    public IReadOnlyDictionary<string, string> FetchSnapshot()
+    /// <param name="includeTvdb">
+    /// Whether TVDB is one of the providers. Only then is the series' TVDB id an input, so a
+    /// TMDB-only install keeps the snapshots it already stored.
+    /// </param>
+    public IReadOnlyDictionary<string, string> FetchSnapshot(bool includeTvdb = false)
     {
         var snapshot = new Dictionary<string, string>(ProviderIds, StringComparer.Ordinal);
         if (Kind is ItemKind.Season or ItemKind.Episode)
@@ -43,6 +48,11 @@ public sealed record LibraryItemInfo(
             if (SeriesProviderIds.TryGetValue(ProviderNames.Tmdb, out var seriesTmdb))
             {
                 snapshot["Series.Tmdb"] = seriesTmdb;
+            }
+
+            if (includeTvdb && SeriesProviderIds.TryGetValue(ProviderNames.Tvdb, out var seriesTvdb))
+            {
+                snapshot["Series.Tvdb"] = seriesTvdb;
             }
 
             if (SeasonNumber is { } season)

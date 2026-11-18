@@ -6,6 +6,18 @@ the release's three parts plus `.0` (release 1.0.0 is plugin version 1.0.0.0).
 
 ## [Unreleased]
 
+### Added
+- **TVDB as a metadata provider:** titles, overviews, taglines and localized posters, logos and
+  backdrops from TheTVDB (API v4; needs a TVDB key, plus the subscriber PIN for user-supported
+  keys). Items are found by their TVDB id; movies and series without one by their IMDb id,
+  seasons and episodes by their series' TVDB id and numbers.
+- **Choice of providers:** TMDB only (the default, as before), TVDB only, or both. With both, a
+  **priority weight** per provider (0–100) decides, per field, image type and locale, whose value
+  is kept; the other fills what it lacks, and AniList still fills only what both left empty.
+  Changing the choice, or which provider wins, fetches the library again.
+- The Status panel and `GET /KasuMeta/Status` show the providers in use, in priority order
+  (`MetadataProviders`), and whether a TVDB key is set (`TvdbConfigured`).
+
 ## [1.0.0] - 2026-11-18
 
 First release. Requires **Jellyfin 12.x** (built against 12.0, tested on 12.0, 12.1 and 12.4)

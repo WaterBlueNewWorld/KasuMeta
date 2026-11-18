@@ -11,8 +11,10 @@ removing the plugin leaves the server as it was.
 
 ## Features
 
-- **Titles, overviews and taglines per locale** from TMDB, fetched once per item whatever the
-  number of languages, and kept up to date as the library changes.
+- **Titles, overviews and taglines per locale** from TMDB, TVDB or both, fetched once per item
+  whatever the number of languages, and kept up to date as the library changes.
+- **Provider priority:** with both TMDB and TVDB on, a weight per provider decides which one's
+  value is kept for each field, image and locale; the other fills only what it lacks.
 - **Localized artwork:** posters, logos and backdrops per language and region (a Mexican poster
   is not a Spanish one).
 - **Fallback per field:** `es-MX` falls back to `es-ES` when TMDB has a Spanish overview but no
@@ -22,7 +24,7 @@ removing the plugin leaves the server as it was.
   *The Cabin in the Woods*. Case and accents are ignored, and Chinese, Japanese, Korean and Thai
   text matches anywhere in a title.
 - **Anime titles from AniList** for items with an AniList id: English, native and romaji titles
-  where TMDB has none. Romaji is always searchable.
+  where TMDB and TVDB have none. Romaji is always searchable.
 - **Manual overrides:** administrators can set and lock titles, overviews and images per
   locale, which provider refreshes never replace.
 - **Respects library access:** users only ever see, or find, items they're allowed to see.
@@ -58,13 +60,26 @@ Dashboard › Plugins › KasuMeta:
 |---|---|
 | Enabled locales | BCP-47 codes, e.g. `en-US, es-MX, ja-JP`. Translations are kept for these locales and their fallbacks. |
 | Fall back to the base language | Lets `es-MX` be answered with `es` or `es-ES`. |
-| TMDB API key | A v3 key or a v4 read access token. Required. It stays on the server; clients never see it. |
+| Titles, overviews and artwork from | **TMDB only** (the default), **TVDB only**, or **TMDB and TVDB, by priority weight**. |
+| TMDB / TVDB priority weight | 0–100, shown when both are used. For each field (title, overview, tagline) or image type, and each locale, the provider with the higher weight wins and the other fills only what it lacks. A tie goes to TMDB. |
+| TMDB API key | A v3 key or a v4 read access token. Needed when TMDB is used. It stays on the server; clients never see it. |
+| TVDB API key, subscriber PIN | A TVDB v4 key, needed when TVDB is used; the PIN only for a user-supported key. Both stay on the server. |
 | Anime titles from AniList | On by default; needs no key. Items need an AniList id, as set by Jellyfin's AniList metadata plugin or by hand under the item's External IDs. |
 | Refresh interval | How old a translation may get before it's fetched again. |
 
 After the key is set, the "Fetch missing translations" task fetches the whole library: one
 TMDB request per item, at most 20 a second. AniList allows 30 requests a minute, so anime
 take longer.
+
+**TVDB** is asked by the item's TVDB id. Movies and series without one are looked up by their
+IMDb id, and seasons and episodes without one by their series' TVDB id and their numbers (in
+the series' default episode order), each lookup one request more; at most 10 requests a second.
+TVDB has one translation per language rather than per country, so its Spanish is stored for
+every enabled Spanish locale (`es-MX`, `es-ES`): where TVDB wins, both show the same text.
+
+Changing which providers are used, or which one wins, re-queues the library: each item is
+fetched again from its providers (one request per item and provider). Changing the weights
+without changing which one is higher costs nothing.
 
 The **Status** panel on the same page shows the progress (items waiting, fetched, failed), the
 latest failures with the items' names, and each provider's requests, retries and failures since
@@ -154,7 +169,8 @@ and the status panel, verified on a live Jellyfin 12.1 server. See [CHANGELOG.md
 
 ## Attribution
 
-This product uses the TMDB API but is not endorsed or certified by TMDB. Anime titles come from
+This product uses the TMDB API but is not endorsed or certified by TMDB. Metadata provided by
+[TheTVDB](https://thetvdb.com), when TVDB is turned on. Anime titles come from
 [AniList](https://anilist.co).
 
 ## License

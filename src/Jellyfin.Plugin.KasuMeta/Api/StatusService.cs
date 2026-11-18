@@ -50,6 +50,8 @@ public sealed class StatusService
             SchemaVersion = _database.SchemaVersion,
             SearchIndex = _database.SearchIndexReady,
             TmdbConfigured = !string.IsNullOrWhiteSpace(config.TmdbApiKey),
+            TvdbConfigured = !string.IsNullOrWhiteSpace(config.TvdbApiKey),
+            MetadataProviders = ProviderPriority.Order(config),
             AniListEnabled = config.AniListEnabled,
             Queued = _queue.Pending,
             Items = new ItemCounts(

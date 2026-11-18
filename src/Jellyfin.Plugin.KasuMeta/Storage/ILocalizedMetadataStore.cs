@@ -42,6 +42,21 @@ public interface ILocalizedMetadataStore
         IReadOnlyCollection<LocalizedImage> images,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Replaces, in one transaction, every unlocked text and image row that any of
+    /// <paramref name="sources"/> holds for the item with <paramref name="fields"/> and
+    /// <paramref name="images"/>, which may mix those sources (the merge of several providers).
+    /// Locked rows and other sources stay, except that an unlocked row of another source under
+    /// a key being written is replaced, as with <see cref="ReplaceProviderFieldsAsync"/>.
+    /// </summary>
+    /// <returns>How many rows were written.</returns>
+    Task<int> ReplaceProvidersAsync(
+        Guid itemId,
+        IReadOnlyCollection<string> sources,
+        IReadOnlyCollection<LocalizedField> fields,
+        IReadOnlyCollection<LocalizedImage> images,
+        CancellationToken cancellationToken);
+
     /// <summary>Gets the stored images of the given items, optionally only for some locales.</summary>
     Task<IReadOnlyList<LocalizedImage>> GetImagesAsync(
         IReadOnlyCollection<Guid> itemIds,

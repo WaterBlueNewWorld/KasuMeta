@@ -1,0 +1,18 @@
+{
+ "status": "success",
+ "data": {
+  "series": {
+   "id": 346988,
+   "name": "少女☆歌劇 レヴュースタァライト"
+  },
+  "episodes": [
+   {
+    "id": 6759431,
+    "seriesId": 346988,
+    "name": "キラめきのありか",
+    "seasonNumber": 1,
+    "number": 5
+   }
+  ]
+ }
+}

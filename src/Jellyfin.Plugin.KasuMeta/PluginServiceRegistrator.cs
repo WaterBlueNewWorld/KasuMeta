@@ -5,6 +5,7 @@ using Jellyfin.Plugin.KasuMeta.Library;
 using Jellyfin.Plugin.KasuMeta.Providers;
 using Jellyfin.Plugin.KasuMeta.Providers.AniList;
 using Jellyfin.Plugin.KasuMeta.Providers.Tmdb;
+using Jellyfin.Plugin.KasuMeta.Providers.Tvdb;
 using Jellyfin.Plugin.KasuMeta.Storage;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
@@ -30,6 +31,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.TryAddSingleton(TimeProvider.System);
         serviceCollection.AddSingleton<IKasuMetaConfigProvider, PluginConfigProvider>();
+        serviceCollection.AddSingleton<IConfigurationChanges, PluginConfigurationChanges>();
 
         serviceCollection.AddSingleton(sp => new KasuMetaDatabase(
             DatabasePath(sp.GetRequiredService<IServerApplicationPaths>()),
@@ -41,6 +43,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         // Providers. HttpClient comes from Jellyfin's own IHttpClientFactory (NamedClient.Default).
         serviceCollection.AddSingleton<ProviderStats>();
         serviceCollection.AddSingleton<ITmdbClient, TmdbClient>();
+        serviceCollection.AddSingleton<ITvdbClient, TvdbClient>();
         serviceCollection.AddSingleton<IAniListClient, AniListClient>();
 
         // Library, fetching, API. The scheduled tasks (Tasks/) need no registration: Jellyfin
@@ -50,6 +53,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<MetadataFetcher>();
         serviceCollection.AddHostedService<FetchWorker>();
         serviceCollection.AddHostedService<LibraryEventsService>();
+        serviceCollection.AddHostedService<ProviderChangeService>();
         serviceCollection.AddSingleton<OverlayService>();
         serviceCollection.AddSingleton<SearchService>();
         serviceCollection.AddSingleton<StatusService>();
