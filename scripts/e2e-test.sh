@@ -220,6 +220,26 @@ put_terms "$(python -I -c "import json,sys; print(json.dumps({'Translations': {s
 rm -rf "$tmp_dir"
 trap - EXIT
 
+echo "Items by genre or tag"
+# by_term KIND TERM LOCALE [EXTRA]: the term is percent-encoded as UTF-8 by Python, as in search.
+by_term() {
+  local t
+  t="$(python -I -c "import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))" "$2")"
+  curl -sS -H "$U" "$base/KasuMeta/Items/ByTerm?kind=$1&term=$t&locale=$3${4:+&$4}"
+}
+[[ "$(curl -sS -H "$U" "$base/KasuMeta/Info" | json "'browse' in d['Features']")" == "True" ]] && pass "Info lists the browse feature" || fail "features"
+body="$(by_term genre Terror es-MX)"
+[[ "$(json "'$cabin' in [r['ItemId'] for r in d['Results']] and '$antitrust' not in [r['ItemId'] for r in d['Results']] and d['Total'] == len(d['Results'])" <<<"$body")" == "True" ]] \
+  && pass "the Spanish genre name finds the items shown it (Jellyfin's own is Horror)" || fail "by term: $body"
+body="$(by_term genre "ACCION" es_mx)"
+[[ "$(json "'$antitrust' in [r['ItemId'] for r in d['Results']] and d['Locale'] == 'es-MX'" <<<"$body")" == "True" ]] \
+  && pass "case and accents ignored (ACCION finds Acción)" || fail "by term folded: $body"
+[[ "$(by_term genre Terror en-US | json "d['Total']")" == 0 ]] && pass "an English reader isn't shown Terror, so it finds nothing" || fail "by term locale"
+body="$(by_term genre Drama es-MX "limit=1")"
+[[ "$(json "len(d['Results']) == 1 and d['Total'] >= 2" <<<"$body")" == "True" ]] && pass "paged, with the total" || fail "by term paging: $body"
+[[ "$(status -H "$U" "$base/KasuMeta/Items/ByTerm?kind=studio&term=x&locale=es-MX")" == 400 ]] && pass "an unknown kind -> 400" || fail "400 kind"
+[[ "$(status "$base/KasuMeta/Items/ByTerm?kind=genre&term=Terror&locale=es-MX")" == 401 ]] && pass "no token -> 401" || fail "401 by term"
+
 echo "Errors"
 [[ "$(curl -sS -H "$U" "$base/KasuMeta/Items/$antitrust?locale=pt-BR" | json "d['Name']['ResolvedLocale']")" == "en-US" ]] \
   && pass "no Portuguese: served in the original language (English)" || fail "original-language fallback"

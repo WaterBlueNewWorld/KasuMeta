@@ -64,7 +64,7 @@ Jellyfin 10.11 and older can't load the plugin: Jellyfin 12 moved to .NET 10.
 **By hand:**
 
 1. Build the plugin (see [Building](#building)), or take the zip from a release.
-2. Copy `Jellyfin.Plugin.KasuMeta.dll` into `<jellyfin config>/plugins/KasuMeta_1.2.0.0/`.
+2. Copy `Jellyfin.Plugin.KasuMeta.dll` into `<jellyfin config>/plugins/KasuMeta_1.3.0.0/`.
 3. Restart Jellyfin. KasuMeta appears under Dashboard › Plugins.
 
 ## Configuration
@@ -204,10 +204,11 @@ existing branches.
 
 ## Status
 
-1.2.0: providers chosen per field, the original-language fallback, genres and tags with a
-translation dictionary, and image uploads, on top of 1.1.0's TMDB and TVDB providers and 1.0.0's
-localized text, images, search, manual overrides, AniList titles and status panel. Verified on a
-live Jellyfin 12.1 server. See [CHANGELOG.md](CHANGELOG.md).
+1.3.0: finding items by a genre or tag as overlays show it, on top of 1.2.0's providers chosen
+per field, original-language fallback, genres and tags with a translation dictionary, and image
+uploads, 1.1.0's TMDB and TVDB providers, and 1.0.0's localized text, images, search, manual
+overrides, AniList titles and status panel. Verified on a live Jellyfin 12.1 server. See
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Attribution
 

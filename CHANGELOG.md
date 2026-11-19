@@ -6,6 +6,12 @@ the release's three parts plus `.0` (release 1.0.0 is plugin version 1.0.0.0).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-19
+
+Requires **Jellyfin 12.x** (built against 12.0, tested on 12.0 and 12.1). KasuMeta has **no
+effect on Jellyfin's stock UI**: it serves frontends that call its API, such as KasuVideo. No
+database or settings change: updating from 1.2.0 fetches nothing again.
+
 ### Added
 - **Items by genre or tag:** `GET /KasuMeta/Items/ByTerm?kind=&term=&locale=` returns the items
   whose genres or tags, exactly as an overlay serves them in the caller's locale, hold a name
