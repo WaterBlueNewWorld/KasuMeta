@@ -57,6 +57,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<TermDictionary>();
         serviceCollection.AddSingleton<OverlayService>();
         serviceCollection.AddSingleton<SearchService>();
+        serviceCollection.AddSingleton<TermItemsService>();
         serviceCollection.AddSingleton<StatusService>();
     }
 }

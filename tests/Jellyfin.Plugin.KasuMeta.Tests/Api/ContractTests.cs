@@ -27,6 +27,7 @@ public class ContractTests
     [InlineData("translations.json", typeof(ItemTranslations))]
     [InlineData("status.json", typeof(KasuMetaStatus))]
     [InlineData("terms.json", typeof(TermList))]
+    [InlineData("items-by-term.json", typeof(TermItemsResponse))]
     public void Fixtures_round_trip_through_the_DTOs_unchanged(string fixture, Type type)
     {
         var json = Read(fixture);
@@ -90,6 +91,8 @@ public class ContractTests
     [InlineData("TermsRequest", typeof(TermsRequest))]
     [InlineData("SearchResponse", typeof(SearchResponse))]
     [InlineData("SearchResult", typeof(SearchResult))]
+    [InlineData("TermItemsResponse", typeof(TermItemsResponse))]
+    [InlineData("TermItem", typeof(TermItem))]
     [InlineData("ItemTranslations", typeof(ItemTranslations))]
     [InlineData("ItemFetchInfo", typeof(ItemFetchInfo))]
     [InlineData("ItemOverridesRequest", typeof(ItemOverridesRequest))]
@@ -118,7 +121,7 @@ public class ContractTests
             .Select(kv => ((YamlScalarNode)kv.Value).Value!)
             .ToList();
 
-        Assert.Equal(7, refs.Count);
+        Assert.Equal(8, refs.Count);
         Assert.All(refs, r => Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "Contract", Path.GetFileName(r))), r));
     }
 

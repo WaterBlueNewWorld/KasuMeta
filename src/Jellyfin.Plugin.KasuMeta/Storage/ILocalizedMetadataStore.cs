@@ -57,6 +57,12 @@ public interface ILocalizedMetadataStore
         IReadOnlyCollection<LocalizedImage> images,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Gets every item's stored rows of one list field (<see cref="MetadataFields.ListFields"/>),
+    /// in every locale: what finding items by a genre or tag works on.
+    /// </summary>
+    Task<IReadOnlyList<LocalizedField>> GetListRowsAsync(string field, CancellationToken cancellationToken);
+
     /// <summary>Gets the stored images of the given items, optionally only for some locales.</summary>
     Task<IReadOnlyList<LocalizedImage>> GetImagesAsync(
         IReadOnlyCollection<Guid> itemIds,

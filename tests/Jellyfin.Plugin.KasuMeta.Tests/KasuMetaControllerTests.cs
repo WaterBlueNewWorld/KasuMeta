@@ -50,7 +50,7 @@ public sealed class KasuMetaControllerTests : IDisposable
         Assert.Equal(("KasuMeta", "1.2.3.0", KasuMetaController.ApiVersion), (info.Name, info.Version, info.ApiVersion));
         Assert.Equal(["es-MX", "ja-JP"], info.EnabledLocales);
         Assert.False(info.FallbackToBaseLanguage);
-        Assert.Equal(["text", "images", "search", "overrides", "genres", "tags", "uploads", "terms", "original-language"], info.Features);
+        Assert.Equal(["text", "images", "search", "overrides", "genres", "tags", "uploads", "terms", "original-language", "browse"], info.Features);
     }
 
     [Theory]
@@ -327,6 +327,71 @@ public sealed class KasuMetaControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Items_by_term_lists_what_the_user_may_see()
+    {
+        await _db.Store.UpsertFieldsAsync(
+            [
+                new(Visible, "es-MX", MetadataFields.Genres, ListValues.Serialize(["Terror", "Misterio"])!, MetadataSources.Tmdb),
+                new(Restricted, "es-MX", MetadataFields.Genres, ListValues.Serialize(["Terror"])!, MetadataSources.Tmdb),
+                new(Visible, "es-MX", MetadataFields.Tags, ListValues.Serialize(["cabaña"])!, MetadataSources.Manual, Locked: true),
+            ],
+            None);
+
+        var asUser = (await Controller(user: UserId).GetItemsByTerm("genre", " terror ", "es_mx", null, null, null, None)).Value!;
+        var asApiKey = (await Controller(apiKey: true).GetItemsByTerm("Genres", "Terror", "es-MX", null, null, null, None)).Value!;
+        var tag = (await Controller(user: UserId).GetItemsByTerm("tag", "CABANA", "es-MX", "movie", 0, 10, None)).Value!;
+        var none = (await Controller(user: UserId).GetItemsByTerm("tag", "Terror", "es-MX", null, null, null, None)).Value!;
+
+        Assert.Equal(("genre", "terror", "es-MX", 1, 0), (asUser.Kind, asUser.Term, asUser.Locale, asUser.Total, asUser.StartIndex));
+        Assert.Equal((Visible.ToString("N"), "Movie"), (Assert.Single(asUser.Results).ItemId, asUser.Results[0].Type));
+        Assert.Equal(2, asApiKey.Total);
+        Assert.Equal(Visible.ToString("N"), Assert.Single(tag.Results).ItemId);
+        Assert.Equal((0, 0), (none.Total, none.Results.Count));
+    }
+
+    [Theory]
+    [InlineData(null, "Terror", "es-MX", null, null, null)]
+    [InlineData("mood", "Terror", "es-MX", null, null, null)]
+    [InlineData("genre", null, "es-MX", null, null, null)]
+    [InlineData("genre", "   ", "es-MX", null, null, null)]
+    [InlineData("genre", "Terror", null, null, null, null)]
+    [InlineData("genre", "Terror", "not a locale", null, null, null)]
+    [InlineData("genre", "Terror", "es-MX", "Movie,Album", null, null)]
+    [InlineData("genre", "Terror", "es-MX", null, -1, null)]
+    [InlineData("genre", "Terror", "es-MX", null, null, 0)]
+    [InlineData("genre", "Terror", "es-MX", null, null, 501)]
+    public async Task A_bad_items_by_term_request_is_a_bad_request(
+        string? kind,
+        string? term,
+        string? locale,
+        string? types,
+        int? startIndex,
+        int? limit)
+    {
+        var result = await Controller(user: UserId).GetItemsByTerm(kind, term, locale, types, startIndex, limit, None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task A_term_over_the_longest_allowed_is_a_bad_request()
+    {
+        var term = new string('a', KasuMetaController.MaxTermLength + 1);
+
+        var result = await Controller(user: UserId).GetItemsByTerm("genre", term, "es-MX", null, null, null, None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task Items_by_term_without_a_user_or_api_key_is_forbidden()
+    {
+        var result = await Controller().GetItemsByTerm("genre", "Terror", "es-MX", null, null, null, None);
+
+        Assert.IsType<ForbidResult>(result.Result);
+    }
+
+    [Fact]
     public void Info_never_exposes_provider_keys()
     {
         Assert.DoesNotContain(
@@ -545,7 +610,8 @@ public sealed class KasuMetaControllerTests : IDisposable
             _db.Store,
             _queue,
             new StatusService(_db.Store, _db.Database, _queue, _stats, _library, _config),
-            terms)
+            terms,
+            new TermItemsService(_db.Store, _library, _config, terms))
         {
             ControllerContext = new ControllerContext
             {

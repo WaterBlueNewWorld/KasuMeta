@@ -19,7 +19,8 @@
     "tags",
     "uploads",
     "terms",
-    "original-language"
+    "original-language",
+    "browse"
   ],
   "FallbackToOriginalLanguage": true
 }

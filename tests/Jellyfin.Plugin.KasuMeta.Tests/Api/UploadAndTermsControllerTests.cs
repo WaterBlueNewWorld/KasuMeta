@@ -311,7 +311,8 @@ public sealed class UploadAndTermsControllerTests : IDisposable
             _db.Store,
             _queue,
             new StatusService(_db.Store, _db.Database, _queue, new ProviderStats(TimeProvider.System), _library, _config),
-            _terms)
+            _terms,
+            new TermItemsService(_db.Store, _library, _config, _terms))
         {
             ControllerContext = new ControllerContext
             {

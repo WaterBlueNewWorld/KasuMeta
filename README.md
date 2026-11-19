@@ -129,6 +129,7 @@ JSON is PascalCase, as everywhere in Jellyfin, and empty fields are left out. Th
 | `POST /KasuMeta/Items/Batch` | Titles, overviews, taglines, genres, tags and images for up to 200 items (one call per grid page) |
 | `GET /KasuMeta/Items/{itemId}?locale=es-MX` | One item's localized data (detail page) |
 | `GET /KasuMeta/Search?q=cabana&locale=es-MX` | Find items by their localized names |
+| `GET /KasuMeta/Items/ByTerm?kind=genre&term=Terror&locale=es-MX` | Find the items shown a genre or tag, by the name overlays serve for it |
 | `GET /KasuMeta/Status` | Admin: fetch progress, recent failures and provider counters |
 | `GET /KasuMeta/Items/{itemId}/All` | Admin: every stored locale of an item, with sources, locks and fetch state |
 | `PUT /KasuMeta/Items/{itemId}/{locale}` | Admin: set (and lock) or remove manual values |
@@ -141,11 +142,14 @@ JSON is PascalCase, as everywhere in Jellyfin, and empty fields are left out. Th
 How a client uses it:
 1. Call `Info` after sign-in. If it's a 404, keep to Jellyfin's own fields. `Info.Features`
    (`text`, `images`, `search`, `overrides`, `genres`, `tags`, `uploads`, `terms`,
-   `original-language`) says what this build serves.
+   `original-language`, `browse`) says what this build serves.
 2. Load items from Jellyfin as usual, then ask `Items/Batch` for the same ids in the user's
    locale, and show the localized values where there are some. `ResolvedLocale` says which
    locale each value really came from.
 3. Search with `Search` beside Jellyfin's own search, and fetch the returned ids from Jellyfin.
+4. When a genre or tag drawn from an overlay should lead to the items that carry it, ask
+   `Items/ByTerm` with the name as shown (Jellyfin's own genre and tag queries only know its own
+   names), and fetch the returned ids from Jellyfin.
 
 The admin routes need an administrator's token or an API key. A manual value is locked by
 default. Genres and tags are sent as `Values` lists. Sending `null` for a field or image removes

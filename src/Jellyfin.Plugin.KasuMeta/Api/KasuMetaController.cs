@@ -36,6 +36,12 @@ public class KasuMetaController : ControllerBase
     /// <summary>Most search results per request.</summary>
     public const int MaxSearchLimit = 100;
 
+    /// <summary>Items by a genre or tag returned when the request names no limit.</summary>
+    public const int DefaultTermItemsLimit = 100;
+
+    /// <summary>Most items by a genre or tag per request.</summary>
+    public const int MaxTermItemsLimit = 500;
+
     /// <summary>Longest manual text value, in UTF-16 units.</summary>
     public const int MaxTextLength = 10_000;
 
@@ -66,10 +72,14 @@ public class KasuMetaController : ControllerBase
     /// here rather than guessed from a version number.
     /// </summary>
     internal static readonly string[] Features =
-        ["text", "images", "search", "overrides", "genres", "tags", "uploads", "terms", "original-language"];
+        ["text", "images", "search", "overrides", "genres", "tags", "uploads", "terms", "original-language", "browse"];
 
     private static readonly IReadOnlySet<ItemKind> DefaultSearchKinds =
         new HashSet<ItemKind> { ItemKind.Movie, ItemKind.Series, ItemKind.Episode };
+
+    // Genres and tags sit on movies and series; their seasons and episodes rarely carry any.
+    private static readonly IReadOnlySet<ItemKind> DefaultTermItemKinds =
+        new HashSet<ItemKind> { ItemKind.Movie, ItemKind.Series };
 
     // Claim types Jellyfin's authentication handler sets (Jellyfin.Api.Constants.InternalClaimTypes,
     // not on NuGet, hence the literals).
@@ -84,6 +94,7 @@ public class KasuMetaController : ControllerBase
     private readonly IFetchQueue _queue;
     private readonly StatusService _status;
     private readonly TermDictionary _terms;
+    private readonly TermItemsService _termItems;
 
     public KasuMetaController(
         IKasuMetaConfigProvider config,
@@ -93,9 +104,11 @@ public class KasuMetaController : ControllerBase
         ILocalizedMetadataStore store,
         IFetchQueue queue,
         StatusService status,
-        TermDictionary terms)
+        TermDictionary terms,
+        TermItemsService termItems)
     {
         _terms = terms;
+        _termItems = termItems;
         _config = config;
         _overlays = overlays;
         _search = search;
@@ -822,6 +835,77 @@ public class KasuMetaController : ControllerBase
         }
 
         return await _search.SearchAsync(query, normalized, count, kinds, userId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Finds the items that carry a genre or a tag, by the name an overlay shows for it in the
+    /// caller's locale ("Terror", where Jellyfin's own genre is "Horror"): the way from a genre
+    /// or tag on a page back to everything that shows it. Case and accents don't matter.
+    /// </summary>
+    /// <param name="kind"><c>genre</c> or <c>tag</c>.</param>
+    /// <param name="term">The genre or tag as shown.</param>
+    /// <param name="locale">The caller's BCP-47 locale.</param>
+    /// <param name="types">Comma-separated kinds: Movie, Series, Season, Episode. Default: Movie,Series.</param>
+    /// <param name="startIndex">How many matches to skip (default 0).</param>
+    /// <param name="limit">Most results (1 to <see cref="MaxTermItemsLimit"/>; default <see cref="DefaultTermItemsLimit"/>).</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <response code="200">One page of the matches the caller may see, and how many there are.</response>
+    /// <response code="400">Unknown kind, no term or one too long, bad locale, an unknown type, or startIndex or limit out of range.</response>
+    [HttpGet("Items/ByTerm")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<TermItemsResponse>> GetItemsByTerm(
+        [FromQuery] string? kind,
+        [FromQuery] string? term,
+        [FromQuery] string? locale,
+        [FromQuery] string? types,
+        [FromQuery] int? startIndex,
+        [FromQuery] int? limit,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseTermKind(kind, out var parsedKind))
+        {
+            return BadRequest("kind must be 'genre' or 'tag'.");
+        }
+
+        var name = term?.Trim() ?? string.Empty;
+        if (name.Length is 0 or > MaxTermLength)
+        {
+            return BadRequest($"term must be 1 to {MaxTermLength} characters.");
+        }
+
+        if (!LocaleChain.TryNormalize(locale, out var normalized))
+        {
+            return BadRequest("Locale must be a BCP-47 code such as es-MX.");
+        }
+
+        IReadOnlySet<ItemKind> kinds = DefaultTermItemKinds;
+        if (!string.IsNullOrWhiteSpace(types) && !TryParseKinds(types, out kinds, out var unknown))
+        {
+            return BadRequest($"Unknown type '{unknown}'. Known: {string.Join(", ", Enum.GetNames<ItemKind>())}.");
+        }
+
+        var skip = startIndex ?? 0;
+        if (skip < 0)
+        {
+            return BadRequest("startIndex must be 0 or more.");
+        }
+
+        var count = limit ?? DefaultTermItemsLimit;
+        if (count is < 1 or > MaxTermItemsLimit)
+        {
+            return BadRequest($"limit must be between 1 and {MaxTermItemsLimit}.");
+        }
+
+        if (!TryGetCaller(out var userId))
+        {
+            return Forbid();
+        }
+
+        return await _termItems
+            .FindAsync(parsedKind, name, normalized, kinds, skip, count, userId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>Parses the comma-separated kinds; null or blank means movies, series and episodes.</summary>

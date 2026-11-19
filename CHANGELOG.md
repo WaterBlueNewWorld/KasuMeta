@@ -6,6 +6,15 @@ the release's three parts plus `.0` (release 1.0.0 is plugin version 1.0.0.0).
 
 ## [Unreleased]
 
+### Added
+- **Items by genre or tag:** `GET /KasuMeta/Items/ByTerm?kind=&term=&locale=` returns the items
+  whose genres or tags, exactly as an overlay serves them in the caller's locale, hold a name
+  ("Terror" for a Spanish user, where Jellyfin's own genre is "Horror"), ignoring case and
+  accents. A frontend that draws an overlay's genres and tags can now lead from one of them
+  to every item that shows it, which Jellyfin's item queries can't do with a translated name.
+  Paged (`startIndex`, `limit`), with the total; only items the caller may see.
+- `Info.Features` adds `browse`.
+
 ## [1.2.0] - 2026-11-18
 
 Requires **Jellyfin 12.x** (built against 12.0, tested on 12.0 and 12.1). KasuMeta has **no

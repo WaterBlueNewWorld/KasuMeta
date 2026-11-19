@@ -1,0 +1,13 @@
+{
+  "Kind": "genre",
+  "Term": "Terror",
+  "Locale": "es-MX",
+  "Total": 1,
+  "StartIndex": 0,
+  "Results": [
+    {
+      "ItemId": "3537184335be7c2a794aa6cf5781ccef",
+      "Type": "Movie"
+    }
+  ]
+}

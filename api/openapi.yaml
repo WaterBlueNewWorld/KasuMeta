@@ -43,6 +43,10 @@ info:
       localized, so it's left to Jellyfin's own images. An image an admin uploaded has
       `Uploaded: true` and a `Url` relative to the server's base URL, fetched with the client's
       Jellyfin token.
+    - **Items by genre or tag:** `Items/ByTerm` finds the items whose genres or tags, exactly as
+      an overlay serves them in the caller's locale, hold a name ("Terror" for a Spanish user,
+      where Jellyfin's own genre is "Horror"). Jellyfin's item queries know only its own names,
+      so this is how a genre or tag drawn from an overlay leads to everything that shows it.
     - **Search:** over localized names in every stored locale, so a title is found by its name
       in any enabled language. Case and accents are ignored ("cabana" finds "La cabaña del
       terror"), every word must match, the last word matches as a prefix (type-ahead), and text
@@ -361,6 +365,55 @@ paths:
         "403": { $ref: "#/components/responses/NotAdmin" }
         "404":
           description: No such item in the library.
+  /KasuMeta/Items/ByTerm:
+    get:
+      summary: Find items by a genre or tag as overlays show it
+      description: >
+        Returns ids, not items: the client fetches them from Jellyfin (`/Items?ids=`). An item
+        matches when the genres or tags list an overlay serves it in `locale` holds `term`: the
+        locale's stored list (with the dictionary filling English names in it), else the English
+        terms translated by the dictionary, else the original language's list, as for `Genres`
+        and `Tags` in an `ItemOverlay`. So a name taken from an overlay always finds the item it
+        came from, and a name from another language doesn't ("Horror" finds nothing for a user
+        who is shown "Terror"). Names compare without case or accents. Results are ordered by
+        Jellyfin's name for the item; `Total` counts every match the caller may see.
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          description: Any casing; the plurals work too.
+          schema: { type: string, enum: [genre, tag] }
+        - name: term
+          in: query
+          required: true
+          description: The genre or tag as shown; 1 to 200 characters after trimming.
+          schema: { type: string, example: Terror }
+        - name: locale
+          in: query
+          required: true
+          schema: { type: string, example: es-MX }
+        - name: types
+          in: query
+          description: Comma-separated item kinds, any casing. Default is Movie,Series.
+          schema: { type: string, example: "Movie,Series" }
+        - name: startIndex
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: One page of the matches the caller may see.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TermItemsResponse" }
+              example: { $ref: "fixtures/items-by-term.json" }
+        "400":
+          description: Unknown kind, no term or one over 200 characters, bad locale, an unknown type, or startIndex or limit out of range. The body is a message string.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: A request with neither a user nor an API key.
   /KasuMeta/Search:
     get:
       summary: Find items by their localized names
@@ -438,7 +491,7 @@ components:
           description: What this build serves. Unknown values are to be ignored.
           items:
             type: string
-            enum: [text, images, search, overrides, genres, tags, uploads, terms, original-language]
+            enum: [text, images, search, overrides, genres, tags, uploads, terms, original-language, browse]
     BatchRequest:
       type: object
       required: [ItemIds, Locale]
@@ -757,6 +810,31 @@ components:
             nullable: true
             maxLength: 200
 
+    TermItemsResponse:
+      type: object
+      required: [Kind, Term, Locale, Total, StartIndex, Results]
+      properties:
+        Kind: { type: string, enum: [genre, tag] }
+        Term:
+          type: string
+          description: The genre or tag as the server read it (trimmed).
+        Locale: { type: string, description: "The requested locale, normalized." }
+        Total:
+          type: integer
+          description: How many items the caller may see match, whatever the page.
+        StartIndex:
+          type: integer
+          description: How many matches were skipped before Results.
+        Results:
+          type: array
+          description: One page of the matches, by Jellyfin's name for the item.
+          items: { $ref: "#/components/schemas/TermItem" }
+    TermItem:
+      type: object
+      required: [ItemId, Type]
+      properties:
+        ItemId: { type: string, description: "Dashless item id." }
+        Type: { type: string, enum: [Movie, Series, Season, Episode] }
     SearchResponse:
       type: object
       required: [Query, Locale, Results]

@@ -213,6 +213,18 @@ public sealed class OverlayService
         }
     }
 
+    /// <summary>
+    /// The genres or tags list one item is served in a locale, in the order this class describes,
+    /// or null when nothing resolves. For <see cref="TermItemsService"/>, so that finding items
+    /// by a term and showing an item's terms can't disagree.
+    /// </summary>
+    internal static LocalizedList? ResolveListValues(
+        string field,
+        IReadOnlyList<LocalizedField> rows,
+        string locale,
+        ResolveOptions options) =>
+        ResolveList(field, rows, locale, options)?.Value;
+
     private static string FormatStatus(FetchStatus status) => status switch
     {
         FetchStatus.Pending => "pending",

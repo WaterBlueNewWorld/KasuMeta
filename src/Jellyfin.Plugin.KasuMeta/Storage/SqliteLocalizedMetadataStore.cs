@@ -267,6 +267,39 @@ public sealed class SqliteLocalizedMetadataStore : ILocalizedMetadataStore
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<LocalizedField>> GetListRowsAsync(string field, CancellationToken cancellationToken)
+    {
+        RequireKnown(field, MetadataFields.ListFields, nameof(field));
+        var rows = new List<LocalizedField>();
+        var connection = await _database.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT item_id, locale, field, value, source, locked, updated_at FROM localized_field
+                WHERE field = $field;
+                """;
+            command.Parameters.AddWithValue("$field", field);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rows.Add(new LocalizedField(
+                    ParseId(reader.GetString(0)),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetString(4),
+                    reader.GetInt64(5) != 0)
+                {
+                    UpdatedAt = DateTimeOffset.FromUnixTimeSeconds(reader.GetInt64(6)),
+                });
+            }
+        }
+
+        return rows;
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<LocalizedImage>> GetImagesAsync(
         IReadOnlyCollection<Guid> itemIds,
         IReadOnlyCollection<string>? locales,
